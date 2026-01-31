@@ -33,6 +33,9 @@ public class ProvisioningService {
         // Validera request
         validateRequest(request);
 
+        // Filtrera bort "admin" från producers och consumers - admin hanteras automatiskt
+        filterAdminFromRequest(request);
+
         String requestId = UUID.randomUUID().toString();
         log.info("Processing request {} for {}", requestId, request.getName());
 
@@ -138,11 +141,21 @@ public class ProvisioningService {
         String newSecuritySettings = brokerXmlTemplateService.generateSecuritySettingsToAdd(existingBrokerXml, request);
 
         // Lägg till nya security settings i befintlig fil (före </security-settings> taggen)
-        String updatedBrokerXml = insertSecuritySettings(existingBrokerXml, newSecuritySettings);
+        // Endast om det finns nya settings att lägga till
+        String updatedBrokerXml = existingBrokerXml;
+        if (newSecuritySettings != null && !newSecuritySettings.trim().isEmpty()) {
+            updatedBrokerXml = insertSecuritySettings(existingBrokerXml, newSecuritySettings);
+        } else {
+            log.info("No new security settings to add for {}", request.getName());
+        }
 
-        // 5. Lägg till address entry i <addresses> sektionen
-        String newAddressEntry = brokerXmlTemplateService.generateAddressEntry(request);
-        updatedBrokerXml = insertAddress(updatedBrokerXml, newAddressEntry);
+        // 5. Lägg till address entry i <addresses> sektionen - endast om den inte redan finns
+        if (!brokerXmlTemplateService.checkAddressExists(existingBrokerXml, request)) {
+            String newAddressEntry = brokerXmlTemplateService.generateAddressEntry(request);
+            updatedBrokerXml = insertAddress(updatedBrokerXml, newAddressEntry);
+        } else {
+            log.info("Address entry already exists for {}, skipping address creation", request.getName());
+        }
 
         gitService.overwriteFile("puppet", brokerXmlPath, updatedBrokerXml);
 
@@ -224,6 +237,33 @@ public class ProvisioningService {
 
     public boolean validateQueueName(String queueName) {
         return queueName != null && queueName.matches("^[a-zA-Z0-9._-]+$");
+    }
+
+    /**
+     * Filtrera bort "admin" från producers och consumers listor.
+     * Admin-rollen hanteras automatiskt av systemet och ska inte skickas
+     * från frontend vid uppdateringar av köer/topics.
+     */
+    private void filterAdminFromRequest(ProvisionRequest request) {
+        if (request.getProducers() != null) {
+            List<String> filteredProducers = request.getProducers().stream()
+                    .filter(producer -> !"admin".equalsIgnoreCase(producer))
+                    .collect(java.util.stream.Collectors.toList());
+            if (filteredProducers.size() != request.getProducers().size()) {
+                log.info("Filtered out 'admin' from producers list for {}", request.getName());
+            }
+            request.setProducers(filteredProducers);
+        }
+
+        if (request.getConsumers() != null) {
+            List<String> filteredConsumers = request.getConsumers().stream()
+                    .filter(consumer -> !"admin".equalsIgnoreCase(consumer))
+                    .collect(java.util.stream.Collectors.toList());
+            if (filteredConsumers.size() != request.getConsumers().size()) {
+                log.info("Filtered out 'admin' from consumers list for {}", request.getName());
+            }
+            request.setConsumers(filteredConsumers);
+        }
     }
 
     /**

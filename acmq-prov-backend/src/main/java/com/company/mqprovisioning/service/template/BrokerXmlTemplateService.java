@@ -48,10 +48,17 @@ public class BrokerXmlTemplateService {
             log.info("Namespace '{}' already exists, skipping namespace security-setting", namespacePrefix);
         }
 
-        // 2. Generera specifik security setting för denna kö/topic med ERB-variabel
-        xml.append(generateResourceSecuritySetting(variableName, namespacePrefix, request));
+        // 2. Kolla om resurs-specifik security setting redan finns
+        boolean resourceExists = checkResourceSecuritySettingExists(existingContent, variableName);
 
-        return xml.toString();
+        if (!resourceExists) {
+            // 3. Generera specifik security setting för denna kö/topic med ERB-variabel
+            xml.append(generateResourceSecuritySetting(variableName, namespacePrefix, request));
+        } else {
+            log.info("Resource security-setting for '{}' already exists, skipping creation", variableName);
+        }
+
+        return xml.toString().trim();
     }
 
     /**
@@ -65,6 +72,28 @@ public class BrokerXmlTemplateService {
         // Sök efter security-setting match="namespace.#" (wildcard pattern för namespace)
         String pattern = String.format("<security-setting\\s+match=\"%s\\.#\">", Pattern.quote(namespacePrefix));
         return Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(existingContent).find();
+    }
+
+    /**
+     * Kontrollerar om en resurs-specifik security-setting redan finns i broker.xml.erb.
+     * Söker efter mönstret: <security-setting match="<%= @address_variableName%>.#">
+     */
+    private boolean checkResourceSecuritySettingExists(String existingContent, String variableName) {
+        if (existingContent == null || existingContent.isEmpty()) {
+            return false;
+        }
+
+        // Sök efter security-setting med ERB-variabel för denna resurs
+        // Pattern: <security-setting match="<%= @address_variableName%>.#">
+        String pattern = String.format(
+                "<security-setting\\s+match=\"<%%= @address_%s%%>\\.#\">",
+                Pattern.quote(variableName)
+        );
+        boolean exists = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(existingContent).find();
+        if (exists) {
+            log.info("Resource security-setting for '{}' already exists in broker.xml.erb", variableName);
+        }
+        return exists;
     }
 
     private String generateSecuritySettings(ProvisionRequest request) {
@@ -272,6 +301,30 @@ public class BrokerXmlTemplateService {
     private String convertToVariableName(String queueName) {
         // Konvertera punkter och bindestreck till underscore
         return queueName.replaceAll("[.\\-]", "_");
+    }
+
+    /**
+     * Kontrollerar om en address entry redan finns i broker.xml.erb.
+     * Söker efter mönstret: <address name="<%= @address_variableName%>">
+     */
+    public boolean checkAddressExists(String existingContent, ProvisionRequest request) {
+        if (existingContent == null || existingContent.isEmpty()) {
+            return false;
+        }
+
+        String variableName = convertToVariableName(request.getName());
+
+        // Sök efter address med ERB-variabel för denna resurs
+        // Pattern: <address name="<%= @address_variableName%>">
+        String pattern = String.format(
+                "<address\\s+name=\"<%%= @address_%s%%>\">",
+                Pattern.quote(variableName)
+        );
+        boolean exists = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(existingContent).find();
+        if (exists) {
+            log.info("Address entry for '{}' already exists in broker.xml.erb", variableName);
+        }
+        return exists;
     }
 
     /**
