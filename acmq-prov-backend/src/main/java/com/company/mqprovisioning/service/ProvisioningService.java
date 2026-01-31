@@ -138,15 +138,25 @@ public class ProvisioningService {
         // 4. Uppdatera broker.xml.erb med security settings
         String brokerXmlPath = "modules/icc_artemis_broker/templates/brokers/etc/broker.xml.erb";
         String existingBrokerXml = gitService.readFile("puppet", brokerXmlPath);
-        String newSecuritySettings = brokerXmlTemplateService.generateSecuritySettingsToAdd(existingBrokerXml, request);
 
-        // Lägg till nya security settings i befintlig fil (före </security-settings> taggen)
-        // Endast om det finns nya settings att lägga till
         String updatedBrokerXml = existingBrokerXml;
-        if (newSecuritySettings != null && !newSecuritySettings.trim().isEmpty()) {
-            updatedBrokerXml = insertSecuritySettings(existingBrokerXml, newSecuritySettings);
+        String variableName = brokerXmlTemplateService.getVariableName(request);
+
+        // Kolla om resurs-specifik security setting redan finns
+        boolean resourceSecurityExists = brokerXmlTemplateService.checkResourceSecuritySettingExists(existingBrokerXml, variableName);
+
+        if (resourceSecurityExists) {
+            // Uppdatera befintlig security-setting med nya producers/consumers
+            log.info("Updating existing security-setting for {} with new producers/consumers", request.getName());
+            updatedBrokerXml = brokerXmlTemplateService.updateExistingSecuritySetting(updatedBrokerXml, request);
         } else {
-            log.info("No new security settings to add for {}", request.getName());
+            // Skapa nya security settings
+            String newSecuritySettings = brokerXmlTemplateService.generateSecuritySettingsToAdd(existingBrokerXml, request);
+            if (newSecuritySettings != null && !newSecuritySettings.trim().isEmpty()) {
+                updatedBrokerXml = insertSecuritySettings(existingBrokerXml, newSecuritySettings);
+            } else {
+                log.info("No new security settings to add for {}", request.getName());
+            }
         }
 
         // 5. Lägg till address entry i <addresses> sektionen - endast om den inte redan finns
