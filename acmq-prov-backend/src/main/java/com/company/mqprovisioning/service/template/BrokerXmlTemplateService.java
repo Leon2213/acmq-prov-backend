@@ -78,7 +78,7 @@ public class BrokerXmlTemplateService {
      * Kontrollerar om en resurs-specifik security-setting redan finns i broker.xml.erb.
      * Söker efter mönstret: <security-setting match="<%= @address_variableName%>.#">
      */
-    private boolean checkResourceSecuritySettingExists(String existingContent, String variableName) {
+    public boolean checkResourceSecuritySettingExists(String existingContent, String variableName) {
         if (existingContent == null || existingContent.isEmpty()) {
             return false;
         }
@@ -94,6 +94,108 @@ public class BrokerXmlTemplateService {
             log.info("Resource security-setting for '{}' already exists in broker.xml.erb", variableName);
         }
         return exists;
+    }
+
+    /**
+     * Uppdaterar en befintlig security-setting med nya producers/consumers.
+     * Hittar den befintliga security-setting, parsar rollerna och lägger till nya.
+     *
+     * @param existingContent Befintligt innehåll i broker.xml.erb
+     * @param request Provisioning request med nya producers/consumers
+     * @return Uppdaterat innehåll med mergade roller
+     */
+    public String updateExistingSecuritySetting(String existingContent, ProvisionRequest request) {
+        String variableName = convertToVariableName(request.getName());
+
+        // Hitta hela security-setting blocket för denna resurs
+        // Pattern matchar: <security-setting match="<%= @address_xxx%>.#">...</security-setting>
+        String securitySettingPattern = String.format(
+                "(<security-setting\\s+match=\"<%%= @address_%s%%>\\.#\">)(.*?)(</security-setting>)",
+                Pattern.quote(variableName)
+        );
+
+        java.util.regex.Pattern pattern = Pattern.compile(securitySettingPattern, Pattern.DOTALL);
+        java.util.regex.Matcher matcher = pattern.matcher(existingContent);
+
+        if (!matcher.find()) {
+            log.warn("Could not find security-setting for '{}' to update", variableName);
+            return existingContent;
+        }
+
+        String openTag = matcher.group(1);
+        String innerContent = matcher.group(2);
+        String closeTag = matcher.group(3);
+
+        // Uppdatera send permission med nya producers
+        if (request.getProducers() != null && !request.getProducers().isEmpty()) {
+            innerContent = updatePermissionRoles(innerContent, "send", request.getProducers());
+        }
+
+        // Uppdatera consume permission med nya consumers
+        if (request.getConsumers() != null && !request.getConsumers().isEmpty()) {
+            innerContent = updatePermissionRoles(innerContent, "consume", request.getConsumers());
+            // Browse har samma roller som consume
+            innerContent = updatePermissionRoles(innerContent, "browse", request.getConsumers());
+        }
+
+        // Ersätt det gamla security-setting blocket med det uppdaterade
+        String updatedSecuritySetting = openTag + innerContent + closeTag;
+        String updatedContent = matcher.replaceFirst(java.util.regex.Matcher.quoteReplacement(updatedSecuritySetting));
+
+        log.info("Updated security-setting for '{}' with new producers/consumers", variableName);
+        return updatedContent;
+    }
+
+    /**
+     * Uppdaterar en specifik permission-typ med nya roller.
+     * Parsar befintliga roller och lägger till nya utan duplicering.
+     */
+    private String updatePermissionRoles(String innerContent, String permissionType, java.util.List<String> newRoles) {
+        // Pattern för att hitta permission: <permission type="xxx" roles="role1,role2"/>
+        String permissionPattern = String.format(
+                "(<permission\\s+type=\"%s\"\\s+roles=\")([^\"]*)(\"\\s*/>)",
+                Pattern.quote(permissionType)
+        );
+
+        java.util.regex.Pattern pattern = Pattern.compile(permissionPattern);
+        java.util.regex.Matcher matcher = pattern.matcher(innerContent);
+
+        if (!matcher.find()) {
+            log.debug("Permission type '{}' not found, skipping", permissionType);
+            return innerContent;
+        }
+
+        String prefix = matcher.group(1);
+        String existingRoles = matcher.group(2);
+        String suffix = matcher.group(3);
+
+        // Parsa befintliga roller och lägg till nya (utan duplicering)
+        java.util.LinkedHashSet<String> roleSet = new java.util.LinkedHashSet<>();
+        if (existingRoles != null && !existingRoles.isEmpty()) {
+            for (String role : existingRoles.split(",")) {
+                roleSet.add(role.trim());
+            }
+        }
+
+        // Lägg till nya roller
+        for (String newRole : newRoles) {
+            if (!roleSet.contains(newRole)) {
+                roleSet.add(newRole);
+                log.debug("Adding role '{}' to permission '{}'", newRole, permissionType);
+            }
+        }
+
+        String updatedRoles = String.join(",", roleSet);
+        String updatedPermission = prefix + updatedRoles + suffix;
+
+        return matcher.replaceFirst(java.util.regex.Matcher.quoteReplacement(updatedPermission));
+    }
+
+    /**
+     * Returnerar variabelnamnet för en request (för användning i ProvisioningService)
+     */
+    public String getVariableName(ProvisionRequest request) {
+        return convertToVariableName(request.getName());
     }
 
     private String generateSecuritySettings(ProvisionRequest request) {
