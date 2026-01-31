@@ -98,11 +98,11 @@ public class BrokerXmlTemplateService {
 
     /**
      * Uppdaterar en befintlig security-setting med nya producers/consumers.
-     * Hittar den befintliga security-setting, parsar rollerna och lägger till nya.
+     * Hittar den befintliga security-setting, parsar rollerna och ERSÄTTER dem.
      *
      * @param existingContent Befintligt innehåll i broker.xml.erb
      * @param request Provisioning request med nya producers/consumers
-     * @return Uppdaterat innehåll med mergade roller
+     * @return Uppdaterat innehåll med ersatta roller
      */
     public String updateExistingSecuritySetting(String existingContent, ProvisionRequest request) {
         String variableName = convertToVariableName(request.getName());
@@ -126,17 +126,15 @@ public class BrokerXmlTemplateService {
         String innerContent = matcher.group(2);
         String closeTag = matcher.group(3);
 
-        // Uppdatera send permission med nya producers
-        if (request.getProducers() != null && !request.getProducers().isEmpty()) {
-            innerContent = updatePermissionRoles(innerContent, "send", request.getProducers());
-        }
+        // Uppdatera send permission med producers (ersätter befintliga)
+        // Alltid anropa även om listan är tom - då behålls bara admin-rollen
+        innerContent = replacePermissionRoles(innerContent, "send",
+                request.getProducers() != null ? request.getProducers() : java.util.Collections.emptyList());
 
-        // Uppdatera consume permission med nya consumers
-        if (request.getConsumers() != null && !request.getConsumers().isEmpty()) {
-            innerContent = updatePermissionRoles(innerContent, "consume", request.getConsumers());
-            // Browse har samma roller som consume
-            innerContent = updatePermissionRoles(innerContent, "browse", request.getConsumers());
-        }
+        // Uppdatera consume och browse permissions med consumers (ersätter befintliga)
+        java.util.List<String> consumers = request.getConsumers() != null ? request.getConsumers() : java.util.Collections.emptyList();
+        innerContent = replacePermissionRoles(innerContent, "consume", consumers);
+        innerContent = replacePermissionRoles(innerContent, "browse", consumers);
 
         // Ersätt det gamla security-setting blocket med det uppdaterade
         String updatedSecuritySetting = openTag + innerContent + closeTag;
@@ -147,10 +145,10 @@ public class BrokerXmlTemplateService {
     }
 
     /**
-     * Uppdaterar en specifik permission-typ med nya roller.
-     * Parsar befintliga roller och lägger till nya utan duplicering.
+     * Ersätter roller för en specifik permission-typ.
+     * Behåller admin-rollen och ersätter alla andra med de nya rollerna.
      */
-    private String updatePermissionRoles(String innerContent, String permissionType, java.util.List<String> newRoles) {
+    private String replacePermissionRoles(String innerContent, String permissionType, java.util.List<String> newRoles) {
         // Pattern för att hitta permission: <permission type="xxx" roles="role1,role2"/>
         String permissionPattern = String.format(
                 "(<permission\\s+type=\"%s\"\\s+roles=\")([^\"]*)(\"\\s*/>)",
@@ -169,24 +167,33 @@ public class BrokerXmlTemplateService {
         String existingRoles = matcher.group(2);
         String suffix = matcher.group(3);
 
-        // Parsa befintliga roller och lägg till nya (utan duplicering)
-        java.util.LinkedHashSet<String> roleSet = new java.util.LinkedHashSet<>();
+        // Hitta och behåll admin-rollen (den som slutar med -admin)
+        String adminRole = null;
         if (existingRoles != null && !existingRoles.isEmpty()) {
             for (String role : existingRoles.split(",")) {
-                roleSet.add(role.trim());
+                String trimmedRole = role.trim();
+                if (trimmedRole.endsWith("-admin")) {
+                    adminRole = trimmedRole;
+                    break;
+                }
             }
         }
 
-        // Lägg till nya roller
+        // Bygg nya roller: admin-roll först, sedan de nya rollerna
+        java.util.LinkedHashSet<String> roleSet = new java.util.LinkedHashSet<>();
+        if (adminRole != null) {
+            roleSet.add(adminRole);
+        }
+
+        // Lägg till nya roller (utan duplicering)
         for (String newRole : newRoles) {
-            if (!roleSet.contains(newRole)) {
-                roleSet.add(newRole);
-                log.debug("Adding role '{}' to permission '{}'", newRole, permissionType);
-            }
+            roleSet.add(newRole);
         }
 
         String updatedRoles = String.join(",", roleSet);
         String updatedPermission = prefix + updatedRoles + suffix;
+
+        log.debug("Updated permission '{}': {} -> {}", permissionType, existingRoles, updatedRoles);
 
         return matcher.replaceFirst(java.util.regex.Matcher.quoteReplacement(updatedPermission));
     }
