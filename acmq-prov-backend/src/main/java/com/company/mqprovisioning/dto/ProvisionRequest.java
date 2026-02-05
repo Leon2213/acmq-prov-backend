@@ -1,5 +1,6 @@
 package com.company.mqprovisioning.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -32,10 +33,30 @@ public class ProvisionRequest {
 
     private List<String> producers;
 
-    // För topics: subscription-namn (t.ex. "happening-subscription-pub-decisions")
+    /**
+     * @deprecated Använd subscriptions istället för enskild subscription.
+     * Behålls för bakåtkompatibilitet.
+     */
+    @Deprecated
     @Pattern(regexp = "^[a-zA-Z0-9._-]*$",
             message = "Subscription-namn får endast innehålla bokstäver, siffror, punkt, underscore och bindestreck")
     private String subscriptionName;
+
+    /**
+     * Lista av subscriptions med subscriber-mappning för topics.
+     * Varje subscription innehåller:
+     * - subscriptionName: namnet på subscription
+     * - subscriber: applikationen/rollen som konsumerar
+     * - isNew: true om detta är en ny subscription som ska skapas
+     *
+     * Exempel:
+     * [
+     *   { "subscriptionName": "newsletter-sub", "subscriber": "email-service", "isNew": true },
+     *   { "subscriptionName": "audit-sub", "subscriber": "audit-service", "isNew": false }
+     * ]
+     */
+    @Valid
+    private List<SubscriptionInfo> subscriptions;
 
     private String description;
 
@@ -54,5 +75,33 @@ public class ProvisionRequest {
     public boolean hasConsumersOrProducers() {
         return (consumers != null && !consumers.isEmpty()) ||
                 (producers != null && !producers.isEmpty());
+    }
+
+    /**
+     * Returnerar nya subscriptions (där isNew == true).
+     * Filtrerar subscriptions-listan och returnerar endast de som är markerade som nya.
+     */
+    public List<SubscriptionInfo> getNewSubscriptions() {
+        if (subscriptions == null || subscriptions.isEmpty()) {
+            return List.of();
+        }
+        return subscriptions.stream()
+                .filter(SubscriptionInfo::isNew)
+                .toList();
+    }
+
+    /**
+     * Kontrollerar om det finns några subscriptions (nya eller existerande).
+     */
+    public boolean hasSubscriptions() {
+        return (subscriptions != null && !subscriptions.isEmpty()) ||
+                (subscriptionName != null && !subscriptionName.isEmpty());
+    }
+
+    /**
+     * Kontrollerar om det finns nya subscriptions att lägga till.
+     */
+    public boolean hasNewSubscriptions() {
+        return !getNewSubscriptions().isEmpty();
     }
 }

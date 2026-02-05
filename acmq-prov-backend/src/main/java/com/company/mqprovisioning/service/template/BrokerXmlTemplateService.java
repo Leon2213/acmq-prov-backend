@@ -1,6 +1,7 @@
 package com.company.mqprovisioning.service.template;
 
 import com.company.mqprovisioning.dto.ProvisionRequest;
+import com.company.mqprovisioning.dto.SubscriptionInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -203,6 +204,129 @@ public class BrokerXmlTemplateService {
      */
     public String getVariableName(ProvisionRequest request) {
         return convertToVariableName(request.getName());
+    }
+
+    /**
+     * Kontrollerar om en subscription-specifik security-setting redan finns.
+     * Söker efter mönstret: <security-setting match="<%= @address_xxx%>::<%= @multicast_yyy%>">
+     *
+     * @deprecated Använd {@link #checkSubscriptionSecuritySettingExists(String, String, String)} istället
+     */
+    @Deprecated
+    public boolean checkSubscriptionSecuritySettingExists(String existingContent, ProvisionRequest request) {
+        if (request.getSubscriptionName() == null || request.getSubscriptionName().isEmpty()) {
+            return true; // No subscription, so nothing to check
+        }
+        return checkSubscriptionSecuritySettingExists(existingContent, request.getName(), request.getSubscriptionName());
+    }
+
+    /**
+     * Kontrollerar om en subscription-specifik security-setting redan finns.
+     * Söker efter mönstret: <security-setting match="<%= @address_xxx%>::<%= @multicast_yyy%>">
+     *
+     * @param existingContent Befintligt innehåll i broker.xml.erb
+     * @param topicName Topic-namnet (t.ex. "pensionsratt.topic.events")
+     * @param subscriptionName Subscription-namnet (t.ex. "newsletter-subscription")
+     * @return true om subscription security-setting redan finns
+     */
+    public boolean checkSubscriptionSecuritySettingExists(String existingContent, String topicName, String subscriptionName) {
+        if (existingContent == null || existingContent.isEmpty()) {
+            return false;
+        }
+
+        if (subscriptionName == null || subscriptionName.isEmpty()) {
+            return true; // No subscription, so nothing to check
+        }
+
+        String variableName = convertToVariableName(topicName);
+        String subscriptionVarName = convertToVariableName(subscriptionName);
+
+        // Pattern: <security-setting match="<%= @address_xxx%>::<%= @multicast_yyy%>">
+        String pattern = String.format(
+                "<security-setting\\s+match=\"<%%= @address_%s%%>::<%%= @multicast_%s%%>\">",
+                Pattern.quote(variableName),
+                Pattern.quote(subscriptionVarName)
+        );
+        boolean exists = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(existingContent).find();
+        if (exists) {
+            log.info("Subscription security-setting for '{}::{}' already exists", variableName, subscriptionVarName);
+        }
+        return exists;
+    }
+
+    /**
+     * Genererar endast subscription security-setting för ett topic.
+     * Används när topic redan finns men en ny subscription läggs till.
+     *
+     * @deprecated Använd {@link #generateSubscriptionSecuritySetting(ProvisionRequest, SubscriptionInfo)} istället
+     */
+    @Deprecated
+    public String generateSubscriptionSecuritySetting(ProvisionRequest request) {
+        if (request.getSubscriptionName() == null || request.getSubscriptionName().isEmpty()) {
+            return "";
+        }
+
+        String variableName = convertToVariableName(request.getName());
+        String subscriptionVarName = convertToVariableName(request.getSubscriptionName());
+        String namespacePrefix = extractNamespacePrefix(request.getName());
+        String adminRole = namespacePrefix + "-admin";
+
+        StringBuilder xml = new StringBuilder();
+        xml.append(String.format("<security-setting match=\"<%%= @address_%s%%>::<%%= @multicast_%s%%>\">\n",
+                variableName, subscriptionVarName));
+
+        // Consume: admin + consumers
+        xml.append(String.format("<permission type=\"consume\" roles=\"%s", adminRole));
+        appendRoles(xml, request.getConsumers());
+        xml.append("\"/>\n");
+
+        // Browse: admin + consumers
+        xml.append(String.format("<permission type=\"browse\" roles=\"%s", adminRole));
+        appendRoles(xml, request.getConsumers());
+        xml.append("\"/>\n");
+
+        xml.append("</security-setting>");
+
+        return xml.toString();
+    }
+
+    /**
+     * Genererar subscription security-setting för ett topic med specifik subscriber.
+     * Används för nya subscriptions med subscriber-mappning.
+     *
+     * @param request ProvisionRequest med topic-information
+     * @param subscription SubscriptionInfo med subscription-namn och subscriber
+     * @return XML-sträng med subscription security-setting
+     */
+    public String generateSubscriptionSecuritySetting(ProvisionRequest request, SubscriptionInfo subscription) {
+        if (subscription == null || subscription.getSubscriptionName() == null || subscription.getSubscriptionName().isEmpty()) {
+            return "";
+        }
+
+        String variableName = convertToVariableName(request.getName());
+        String subscriptionVarName = convertToVariableName(subscription.getSubscriptionName());
+        String namespacePrefix = extractNamespacePrefix(request.getName());
+        String adminRole = namespacePrefix + "-admin";
+
+        // Subscriber blir consumer för denna subscription
+        String subscriberRole = subscription.getSubscriber();
+
+        StringBuilder xml = new StringBuilder();
+        xml.append(String.format("<security-setting match=\"<%%= @address_%s%%>::<%%= @multicast_%s%%>\">\n",
+                variableName, subscriptionVarName));
+
+        // Consume: admin + subscriber
+        xml.append(String.format("<permission type=\"consume\" roles=\"%s,%s\"/>\n", adminRole, subscriberRole));
+
+        // Browse: admin + subscriber
+        xml.append(String.format("<permission type=\"browse\" roles=\"%s,%s\"/>\n", adminRole, subscriberRole));
+
+        xml.append("</security-setting>");
+
+        log.info("Generated subscription security-setting for {}::{} with subscriber {}",
+                variableName, subscriptionVarName, subscriberRole);
+
+        return xml.toString();
     }
 
     private String generateSecuritySettings(ProvisionRequest request) {
@@ -437,6 +561,127 @@ public class BrokerXmlTemplateService {
     }
 
     /**
+     * Kontrollerar om en subscription queue redan finns i ett existerande address/multicast block.
+     * Söker efter mönstret: <queue name="<%= @multicast_subscriptionVarName%>"/>
+     *
+     * @deprecated Använd {@link #checkSubscriptionQueueExistsInAddress(String, String, String)} istället
+     */
+    @Deprecated
+    public boolean checkSubscriptionQueueExistsInAddress(String existingContent, ProvisionRequest request) {
+        if (request.getSubscriptionName() == null || request.getSubscriptionName().isEmpty()) {
+            return true; // No subscription, nothing to check
+        }
+        return checkSubscriptionQueueExistsInAddress(existingContent, request.getName(), request.getSubscriptionName());
+    }
+
+    /**
+     * Kontrollerar om en subscription queue redan finns i ett existerande address/multicast block.
+     * Söker efter mönstret: <queue name="<%= @multicast_subscriptionVarName%>"/>
+     *
+     * @param existingContent Befintligt innehåll i broker.xml.erb
+     * @param topicName Topic-namnet (t.ex. "pensionsratt.topic.events")
+     * @param subscriptionName Subscription-namnet (t.ex. "newsletter-subscription")
+     * @return true om subscription queue redan finns
+     */
+    public boolean checkSubscriptionQueueExistsInAddress(String existingContent, String topicName, String subscriptionName) {
+        if (existingContent == null || existingContent.isEmpty()) {
+            return false;
+        }
+
+        if (subscriptionName == null || subscriptionName.isEmpty()) {
+            return true; // No subscription, nothing to check
+        }
+
+        String subscriptionVarName = convertToVariableName(subscriptionName);
+
+        // Pattern: <queue name="<%= @multicast_subscriptionVarName%>"/>
+        String pattern = String.format(
+                "<queue\\s+name=\"<%%= @multicast_%s%%>\"",
+                Pattern.quote(subscriptionVarName)
+        );
+        boolean exists = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(existingContent).find();
+        if (exists) {
+            log.info("Subscription queue for '{}' already exists in address", subscriptionVarName);
+        }
+        return exists;
+    }
+
+    /**
+     * Lägger till en subscription queue i ett existerande address/multicast block.
+     * Hittar address-blocket och lägger till queue-taggen före </multicast>.
+     *
+     * @deprecated Använd {@link #addSubscriptionQueueToExistingAddress(String, String, String)} istället
+     */
+    @Deprecated
+    public String addSubscriptionQueueToExistingAddress(String existingContent, ProvisionRequest request) {
+        if (request.getSubscriptionName() == null || request.getSubscriptionName().isEmpty()) {
+            return existingContent;
+        }
+        return addSubscriptionQueueToExistingAddress(existingContent, request.getName(), request.getSubscriptionName());
+    }
+
+    /**
+     * Lägger till en subscription queue i ett existerande address/multicast block.
+     * Hittar address-blocket och lägger till queue-taggen före </multicast>.
+     *
+     * @param existingContent Befintligt innehåll i broker.xml.erb
+     * @param topicName Topic-namnet (t.ex. "pensionsratt.topic.events")
+     * @param subscriptionName Subscription-namnet (t.ex. "newsletter-subscription")
+     * @return Uppdaterat innehåll med ny subscription queue
+     */
+    public String addSubscriptionQueueToExistingAddress(String existingContent, String topicName, String subscriptionName) {
+        if (subscriptionName == null || subscriptionName.isEmpty()) {
+            return existingContent;
+        }
+
+        String variableName = convertToVariableName(topicName);
+        String subscriptionVarName = convertToVariableName(subscriptionName);
+
+        // Hitta address-blocket för detta topic
+        // Pattern: <address name="<%= @address_xxx%>">...<multicast>...</multicast>...</address>
+        String addressPattern = String.format(
+                "(<address\\s+name=\"<%%= @address_%s%%>\">.*?<multicast>)(.*?)(</multicast>)",
+                Pattern.quote(variableName)
+        );
+
+        java.util.regex.Pattern pattern = Pattern.compile(addressPattern, Pattern.DOTALL);
+        java.util.regex.Matcher matcher = pattern.matcher(existingContent);
+
+        if (!matcher.find()) {
+            log.warn("Could not find address/multicast block for '{}' to add subscription queue", variableName);
+            return existingContent;
+        }
+
+        String beforeMulticastContent = matcher.group(1);
+        String multicastContent = matcher.group(2);
+        String closeMulticast = matcher.group(3);
+
+        // Detektera indentering från multicast-innehållet
+        String queueIndent = "              "; // Default: 14 spaces
+        java.util.regex.Pattern indentPattern = Pattern.compile("^(\\s*)<queue", Pattern.MULTILINE);
+        java.util.regex.Matcher indentMatcher = indentPattern.matcher(multicastContent);
+        if (indentMatcher.find()) {
+            queueIndent = indentMatcher.group(1);
+        }
+
+        // Skapa ny queue-tagg
+        String newQueueTag = String.format("%s<queue name=\"<%%= @multicast_%s%%>\"/>",
+                queueIndent, subscriptionVarName);
+
+        // Lägg till queue före </multicast>
+        String trimmedMulticastContent = multicastContent.stripTrailing();
+        String updatedMulticastContent = trimmedMulticastContent + "\n" + newQueueTag + "\n            ";
+
+        // Ersätt i innehållet
+        String updatedContent = matcher.replaceFirst(
+                java.util.regex.Matcher.quoteReplacement(beforeMulticastContent + updatedMulticastContent + closeMulticast)
+        );
+
+        log.info("Added subscription queue '{}' to existing address '{}'", subscriptionVarName, variableName);
+        return updatedContent;
+    }
+
+    /**
      * Genererar address entry att lägga till i <addresses> sektionen.
      *
      * För queue (anycast):
@@ -450,6 +695,7 @@ public class BrokerXmlTemplateService {
      * <address name="<%= @address_xxx %>">
      *   <multicast>
      *     <queue name="<%= @multicast_subscription_xxx %>"/>
+     *     <queue name="<%= @multicast_subscription_yyy %>"/>
      *   </multicast>
      * </address>
      *
@@ -470,8 +716,15 @@ public class BrokerXmlTemplateService {
             // För MULTICAST (topic)
             xml.append("<multicast>\n");
 
-            // Lägg till subscription queue om angiven
-            if (request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
+            // Lägg till subscription queues från nya subscriptions-listan
+            if (request.getSubscriptions() != null && !request.getSubscriptions().isEmpty()) {
+                for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
+                    String subscriptionVarName = convertToVariableName(subscription.getSubscriptionName());
+                    xml.append(String.format("<queue name=\"<%%= @multicast_%s%%>\"/>\n", subscriptionVarName));
+                }
+            }
+            // Fallback: stöd för gamla subscriptionName-fältet (bakåtkompatibilitet)
+            else if (request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
                 String subscriptionVarName = convertToVariableName(request.getSubscriptionName());
                 xml.append(String.format("<queue name=\"<%%= @multicast_%s%%>\"/>\n", subscriptionVarName));
             }
