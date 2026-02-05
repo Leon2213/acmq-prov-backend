@@ -101,12 +101,25 @@ public class BrokerXmlTemplateService {
      * Uppdaterar en befintlig security-setting med nya producers/consumers.
      * Hittar den befintliga security-setting, parsar rollerna och ERSÄTTER dem.
      *
+     * OBS: Uppdaterar ENDAST roller om motsvarande lista är explicit angiven (inte null).
+     * Om producers är null, lämnas send-roller oförändrade.
+     * Om consumers är null, lämnas consume/browse-roller oförändrade.
+     * Detta förhindrar att existerande roller tas bort vid uppdateringar som bara
+     * berör subscriptions.
+     *
      * @param existingContent Befintligt innehåll i broker.xml.erb
      * @param request Provisioning request med nya producers/consumers
      * @return Uppdaterat innehåll med ersatta roller
      */
     public String updateExistingSecuritySetting(String existingContent, ProvisionRequest request) {
         String variableName = convertToVariableName(request.getName());
+
+        // Kontrollera om det finns något att uppdatera
+        // Om både producers och consumers är null, skippa uppdatering
+        if (request.getProducers() == null && request.getConsumers() == null) {
+            log.info("No producers or consumers specified for '{}', skipping security-setting role update", variableName);
+            return existingContent;
+        }
 
         // Hitta hela security-setting blocket för denna resurs
         // Pattern matchar: <security-setting match="<%= @address_xxx%>.#">...</security-setting>
@@ -127,21 +140,28 @@ public class BrokerXmlTemplateService {
         String innerContent = matcher.group(2);
         String closeTag = matcher.group(3);
 
-        // Uppdatera send permission med producers (ersätter befintliga)
-        // Alltid anropa även om listan är tom - då behålls bara admin-rollen
-        innerContent = replacePermissionRoles(innerContent, "send",
-                request.getProducers() != null ? request.getProducers() : java.util.Collections.emptyList());
+        // Uppdatera send permission med producers ENDAST om producers är explicit angiven
+        if (request.getProducers() != null) {
+            log.info("Updating send roles for '{}' with producers: {}", variableName, request.getProducers());
+            innerContent = replacePermissionRoles(innerContent, "send", request.getProducers());
+        } else {
+            log.debug("Producers is null for '{}', keeping existing send roles", variableName);
+        }
 
-        // Uppdatera consume och browse permissions med consumers (ersätter befintliga)
-        java.util.List<String> consumers = request.getConsumers() != null ? request.getConsumers() : java.util.Collections.emptyList();
-        innerContent = replacePermissionRoles(innerContent, "consume", consumers);
-        innerContent = replacePermissionRoles(innerContent, "browse", consumers);
+        // Uppdatera consume och browse permissions ENDAST om consumers är explicit angiven
+        if (request.getConsumers() != null) {
+            log.info("Updating consume/browse roles for '{}' with consumers: {}", variableName, request.getConsumers());
+            innerContent = replacePermissionRoles(innerContent, "consume", request.getConsumers());
+            innerContent = replacePermissionRoles(innerContent, "browse", request.getConsumers());
+        } else {
+            log.debug("Consumers is null for '{}', keeping existing consume/browse roles", variableName);
+        }
 
         // Ersätt det gamla security-setting blocket med det uppdaterade
         String updatedSecuritySetting = openTag + innerContent + closeTag;
         String updatedContent = matcher.replaceFirst(java.util.regex.Matcher.quoteReplacement(updatedSecuritySetting));
 
-        log.info("Updated security-setting for '{}' with new producers/consumers", variableName);
+        log.info("Updated security-setting for '{}'", variableName);
         return updatedContent;
     }
 

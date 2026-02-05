@@ -1,5 +1,6 @@
 package com.company.mqprovisioning.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import lombok.AllArgsConstructor;
@@ -45,6 +46,10 @@ public class SubscriptionInfo {
      * Markerar om detta är en ny subscription som ska läggas till.
      * - true: Backend skapar security-settings, init.pp variabler, och address entries
      * - false: Subscription existerar redan, ingen ändring behövs
+     *
+     * OBS: @JsonProperty krävs för att Jackson ska mappa JSON-fältet "isNew" korrekt
+     * eftersom Lombok genererar getter som isNew() för boolean-fält som börjar med "is".
      */
+    @JsonProperty("isNew")
     private boolean isNew;
 }
