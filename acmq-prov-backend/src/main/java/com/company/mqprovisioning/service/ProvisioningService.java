@@ -159,12 +159,36 @@ public class ProvisioningService {
             }
         }
 
+        // 4b. För topics med subscription: kolla om subscription security-setting behöver läggas till
+        if ("topic".equals(request.getResourceType()) &&
+                request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
+            if (!brokerXmlTemplateService.checkSubscriptionSecuritySettingExists(updatedBrokerXml, request)) {
+                log.info("Adding subscription security-setting for {}::{}", request.getName(), request.getSubscriptionName());
+                String subscriptionSecuritySetting = brokerXmlTemplateService.generateSubscriptionSecuritySetting(request);
+                if (subscriptionSecuritySetting != null && !subscriptionSecuritySetting.trim().isEmpty()) {
+                    updatedBrokerXml = insertSecuritySettings(updatedBrokerXml, subscriptionSecuritySetting);
+                }
+            } else {
+                log.info("Subscription security-setting already exists for {}::{}", request.getName(), request.getSubscriptionName());
+            }
+        }
+
         // 5. Lägg till address entry i <addresses> sektionen - endast om den inte redan finns
         if (!brokerXmlTemplateService.checkAddressExists(existingBrokerXml, request)) {
             String newAddressEntry = brokerXmlTemplateService.generateAddressEntry(request);
             updatedBrokerXml = insertAddress(updatedBrokerXml, newAddressEntry);
         } else {
-            log.info("Address entry already exists for {}, skipping address creation", request.getName());
+            log.info("Address entry already exists for {}", request.getName());
+            // 5b. För topics med subscription: kolla om subscription queue behöver läggas till i existerande address
+            if ("topic".equals(request.getResourceType()) &&
+                    request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
+                if (!brokerXmlTemplateService.checkSubscriptionQueueExistsInAddress(updatedBrokerXml, request)) {
+                    log.info("Adding subscription queue to existing address for {}::{}", request.getName(), request.getSubscriptionName());
+                    updatedBrokerXml = brokerXmlTemplateService.addSubscriptionQueueToExistingAddress(updatedBrokerXml, request);
+                } else {
+                    log.info("Subscription queue already exists in address for {}", request.getName());
+                }
+            }
         }
 
         gitService.overwriteFile("puppet", brokerXmlPath, updatedBrokerXml);

@@ -205,6 +205,68 @@ public class BrokerXmlTemplateService {
         return convertToVariableName(request.getName());
     }
 
+    /**
+     * Kontrollerar om en subscription-specifik security-setting redan finns.
+     * Söker efter mönstret: <security-setting match="<%= @address_xxx%>::<%= @multicast_yyy%>">
+     */
+    public boolean checkSubscriptionSecuritySettingExists(String existingContent, ProvisionRequest request) {
+        if (existingContent == null || existingContent.isEmpty()) {
+            return false;
+        }
+
+        if (request.getSubscriptionName() == null || request.getSubscriptionName().isEmpty()) {
+            return true; // No subscription, so nothing to check
+        }
+
+        String variableName = convertToVariableName(request.getName());
+        String subscriptionVarName = convertToVariableName(request.getSubscriptionName());
+
+        // Pattern: <security-setting match="<%= @address_xxx%>::<%= @multicast_yyy%>">
+        String pattern = String.format(
+                "<security-setting\\s+match=\"<%%= @address_%s%%>::<%%= @multicast_%s%%>\">",
+                Pattern.quote(variableName),
+                Pattern.quote(subscriptionVarName)
+        );
+        boolean exists = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(existingContent).find();
+        if (exists) {
+            log.info("Subscription security-setting for '{}::{}' already exists", variableName, subscriptionVarName);
+        }
+        return exists;
+    }
+
+    /**
+     * Genererar endast subscription security-setting för ett topic.
+     * Används när topic redan finns men en ny subscription läggs till.
+     */
+    public String generateSubscriptionSecuritySetting(ProvisionRequest request) {
+        if (request.getSubscriptionName() == null || request.getSubscriptionName().isEmpty()) {
+            return "";
+        }
+
+        String variableName = convertToVariableName(request.getName());
+        String subscriptionVarName = convertToVariableName(request.getSubscriptionName());
+        String namespacePrefix = extractNamespacePrefix(request.getName());
+        String adminRole = namespacePrefix + "-admin";
+
+        StringBuilder xml = new StringBuilder();
+        xml.append(String.format("<security-setting match=\"<%%= @address_%s%%>::<%%= @multicast_%s%%>\">\n",
+                variableName, subscriptionVarName));
+
+        // Consume: admin + consumers
+        xml.append(String.format("<permission type=\"consume\" roles=\"%s", adminRole));
+        appendRoles(xml, request.getConsumers());
+        xml.append("\"/>\n");
+
+        // Browse: admin + consumers
+        xml.append(String.format("<permission type=\"browse\" roles=\"%s", adminRole));
+        appendRoles(xml, request.getConsumers());
+        xml.append("\"/>\n");
+
+        xml.append("</security-setting>");
+
+        return xml.toString();
+    }
+
     private String generateSecuritySettings(ProvisionRequest request) {
         StringBuilder xml = new StringBuilder();
 
@@ -434,6 +496,89 @@ public class BrokerXmlTemplateService {
             log.info("Address entry for '{}' already exists in broker.xml.erb", variableName);
         }
         return exists;
+    }
+
+    /**
+     * Kontrollerar om en subscription queue redan finns i ett existerande address/multicast block.
+     * Söker efter mönstret: <queue name="<%= @multicast_subscriptionVarName%>"/>
+     */
+    public boolean checkSubscriptionQueueExistsInAddress(String existingContent, ProvisionRequest request) {
+        if (existingContent == null || existingContent.isEmpty()) {
+            return false;
+        }
+
+        if (request.getSubscriptionName() == null || request.getSubscriptionName().isEmpty()) {
+            return true; // No subscription, nothing to check
+        }
+
+        String subscriptionVarName = convertToVariableName(request.getSubscriptionName());
+
+        // Pattern: <queue name="<%= @multicast_subscriptionVarName%>"/>
+        String pattern = String.format(
+                "<queue\\s+name=\"<%%= @multicast_%s%%>\"",
+                Pattern.quote(subscriptionVarName)
+        );
+        boolean exists = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(existingContent).find();
+        if (exists) {
+            log.info("Subscription queue for '{}' already exists in address", subscriptionVarName);
+        }
+        return exists;
+    }
+
+    /**
+     * Lägger till en subscription queue i ett existerande address/multicast block.
+     * Hittar address-blocket och lägger till queue-taggen före </multicast>.
+     */
+    public String addSubscriptionQueueToExistingAddress(String existingContent, ProvisionRequest request) {
+        if (request.getSubscriptionName() == null || request.getSubscriptionName().isEmpty()) {
+            return existingContent;
+        }
+
+        String variableName = convertToVariableName(request.getName());
+        String subscriptionVarName = convertToVariableName(request.getSubscriptionName());
+
+        // Hitta address-blocket för detta topic
+        // Pattern: <address name="<%= @address_xxx%>">...<multicast>...</multicast>...</address>
+        String addressPattern = String.format(
+                "(<address\\s+name=\"<%%= @address_%s%%>\">.*?<multicast>)(.*?)(</multicast>)",
+                Pattern.quote(variableName)
+        );
+
+        java.util.regex.Pattern pattern = Pattern.compile(addressPattern, Pattern.DOTALL);
+        java.util.regex.Matcher matcher = pattern.matcher(existingContent);
+
+        if (!matcher.find()) {
+            log.warn("Could not find address/multicast block for '{}' to add subscription queue", variableName);
+            return existingContent;
+        }
+
+        String beforeMulticastContent = matcher.group(1);
+        String multicastContent = matcher.group(2);
+        String closeMulticast = matcher.group(3);
+
+        // Detektera indentering från multicast-innehållet
+        String queueIndent = "              "; // Default: 14 spaces
+        java.util.regex.Pattern indentPattern = Pattern.compile("^(\\s*)<queue", Pattern.MULTILINE);
+        java.util.regex.Matcher indentMatcher = indentPattern.matcher(multicastContent);
+        if (indentMatcher.find()) {
+            queueIndent = indentMatcher.group(1);
+        }
+
+        // Skapa ny queue-tagg
+        String newQueueTag = String.format("%s<queue name=\"<%%= @multicast_%s%%>\"/>",
+                queueIndent, subscriptionVarName);
+
+        // Lägg till queue före </multicast>
+        String trimmedMulticastContent = multicastContent.stripTrailing();
+        String updatedMulticastContent = trimmedMulticastContent + "\n" + newQueueTag + "\n            ";
+
+        // Ersätt i innehållet
+        String updatedContent = matcher.replaceFirst(
+                java.util.regex.Matcher.quoteReplacement(beforeMulticastContent + updatedMulticastContent + closeMulticast)
+        );
+
+        log.info("Added subscription queue '{}' to existing address '{}'", subscriptionVarName, variableName);
+        return updatedContent;
     }
 
     /**

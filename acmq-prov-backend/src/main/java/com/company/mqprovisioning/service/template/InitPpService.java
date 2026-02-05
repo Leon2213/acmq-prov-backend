@@ -42,18 +42,40 @@ public class InitPpService {
         // Konvertera könamn till variabel-namn (t.ex. pensionsratt.queue.test -> pensionsratt_queue_test)
         String variableName = convertToVariableName(request.getName());
 
-        // Kolla om variabeln redan finns
+        // Kolla om address-variabeln redan finns
         String addressVarPattern = "\\$address_" + Pattern.quote(variableName) + "\\s*=";
-        if (existingContent.matches("(?s).*" + addressVarPattern + ".*")) {
-            log.info("Variable $address_{} already exists in init.pp", variableName);
+        boolean addressExists = existingContent.matches("(?s).*" + addressVarPattern + ".*");
+
+        // För topics med subscription: kolla om subscription-variabeln redan finns
+        boolean subscriptionExists = true; // Default true så vi inte lägger till om det inte finns subscription
+        String subscriptionVarName = null;
+        if ("topic".equals(request.getResourceType()) &&
+                request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
+            subscriptionVarName = convertToVariableName(request.getSubscriptionName());
+            String subscriptionVarPattern = "\\$multicast_" + Pattern.quote(subscriptionVarName) + "\\s*=";
+            subscriptionExists = existingContent.matches("(?s).*" + subscriptionVarPattern + ".*");
+        }
+
+        // Om både address och subscription finns (eller ingen subscription), returnera
+        if (addressExists && subscriptionExists) {
+            log.info("All variables already exist in init.pp for {}", request.getName());
             return existingContent;
         }
 
-        // Lägg till nya variabler i class-parametrar
-        String updatedContent = addClassParameters(existingContent, variableName, request);
+        String updatedContent = existingContent;
 
-        // Lägg till valideringar
-        updatedContent = addValidations(updatedContent, variableName, request);
+        // Scenario 1: Address finns inte - lägg till allt
+        if (!addressExists) {
+            log.info("Variable $address_{} does not exist, adding all variables", variableName);
+            updatedContent = addClassParameters(updatedContent, variableName, request);
+            updatedContent = addValidations(updatedContent, variableName, request);
+        }
+        // Scenario 2: Address finns men subscription saknas - lägg till endast subscription
+        else if (!subscriptionExists) {
+            log.info("Address exists but subscription variable $multicast_{} is missing, adding it", subscriptionVarName);
+            updatedContent = addSubscriptionParameter(updatedContent, subscriptionVarName, request.getSubscriptionName());
+            updatedContent = addSubscriptionValidation(updatedContent, subscriptionVarName);
+        }
 
         return updatedContent;
     }
@@ -265,5 +287,100 @@ public class InitPpService {
         }
 
         return validations;
+    }
+
+    /**
+     * Lägger till endast en subscription-variabel i class-parametrar.
+     * Används när topic redan finns men en ny subscription läggs till.
+     */
+    private String addSubscriptionParameter(String content, String subscriptionVarName, String subscriptionValue) {
+        Matcher matcher = CLASS_PARAMS_PATTERN.matcher(content);
+
+        if (!matcher.find()) {
+            log.warn("Could not find class parameter section in init.pp");
+            return content;
+        }
+
+        String classParams = matcher.group(1);
+        int classStartPos = matcher.start();
+        int classEndPos = matcher.end();
+
+        // Hitta sista variabeldeklarationen
+        String[] lines = classParams.split("\n");
+        int lastParamLineIndex = -1;
+
+        for (int i = lines.length - 1; i >= 0; i--) {
+            String line = lines[i].trim();
+            if (line.contains("$") && line.contains("=")) {
+                lastParamLineIndex = i;
+                break;
+            }
+        }
+
+        // Detektera alignment-kolumnen för '=' från befintliga rader
+        int alignmentColumn = detectAlignmentColumn(classParams);
+
+        // Skapa subscription-variabeldeklaration
+        String newLine = formatParameterLine("multicast", subscriptionVarName, subscriptionValue, alignmentColumn);
+
+        // Infoga nya deklarationen efter sista befintliga deklaration
+        StringBuilder newClassParams = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            newClassParams.append(lines[i]);
+            if (i < lines.length - 1) {
+                newClassParams.append("\n");
+            }
+
+            // Efter sista parameter-raden, lägg till ny deklaration
+            if (i == lastParamLineIndex) {
+                newClassParams.append("\n\n"); // Tom rad före nya deklarationen
+                newClassParams.append(newLine).append("\n");
+            }
+        }
+
+        // Ersätt class-parameter-sektionen
+        String before = content.substring(0, classStartPos);
+        String after = content.substring(classEndPos);
+
+        String result = before + "class icc_artemis_broker (" + newClassParams.toString() + ") {" + after;
+
+        log.info("Added subscription parameter declaration for multicast_{}", subscriptionVarName);
+        return result;
+    }
+
+    /**
+     * Lägger till endast en subscription-validering.
+     * Används när topic redan finns men en ny subscription läggs till.
+     */
+    private String addSubscriptionValidation(String content, String subscriptionVarName) {
+        Matcher matcher = VALIDATES_SECTION_PATTERN.matcher(content);
+
+        if (!matcher.find()) {
+            log.warn("Could not find VALIDATES section in init.pp");
+            return content;
+        }
+
+        String validatesHeader = matcher.group(1);
+        String validatesBody = matcher.group(2);
+        String reposHeader = matcher.group(3);
+
+        int sectionStart = matcher.start();
+        int sectionEnd = matcher.end();
+
+        // Lägg till ny validering i slutet av VALIDATES-sektionen
+        String trimmedBody = validatesBody.stripTrailing();
+        StringBuilder newValidatesBody = new StringBuilder(trimmedBody);
+        newValidatesBody.append("\n");
+        newValidatesBody.append("  ").append(String.format("validate_string($multicast_%s)", subscriptionVarName)).append("\n");
+        newValidatesBody.append("\n");
+
+        // Ersätt VALIDATES-sektionen
+        String before = content.substring(0, sectionStart);
+        String after = content.substring(sectionEnd - reposHeader.length());
+
+        String result = before + validatesHeader + newValidatesBody.toString() + after;
+
+        log.info("Added subscription validation for multicast_{}", subscriptionVarName);
+        return result;
     }
 }
