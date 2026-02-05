@@ -2,6 +2,7 @@ package com.company.mqprovisioning.service;
 
 import com.company.mqprovisioning.dto.ProvisionRequest;
 import com.company.mqprovisioning.dto.ProvisionResponse;
+import com.company.mqprovisioning.dto.SubscriptionInfo;
 import com.company.mqprovisioning.service.git.GitService;
 import com.company.mqprovisioning.service.template.AcmqYamlService;
 import com.company.mqprovisioning.service.template.InitPpService;
@@ -159,17 +160,25 @@ public class ProvisioningService {
             }
         }
 
-        // 4b. För topics med subscription: kolla om subscription security-setting behöver läggas till
-        if ("topic".equals(request.getResourceType()) &&
-                request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
-            if (!brokerXmlTemplateService.checkSubscriptionSecuritySettingExists(updatedBrokerXml, request)) {
-                log.info("Adding subscription security-setting for {}::{}", request.getName(), request.getSubscriptionName());
-                String subscriptionSecuritySetting = brokerXmlTemplateService.generateSubscriptionSecuritySetting(request);
-                if (subscriptionSecuritySetting != null && !subscriptionSecuritySetting.trim().isEmpty()) {
-                    updatedBrokerXml = insertSecuritySettings(updatedBrokerXml, subscriptionSecuritySetting);
+        // 4b. För topics med nya subscriptions: lägg till security-settings för varje ny subscription
+        if ("topic".equals(request.getResourceType()) && request.hasNewSubscriptions()) {
+            for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
+                log.info("Processing new subscription: {} with subscriber: {}",
+                        subscription.getSubscriptionName(), subscription.getSubscriber());
+
+                if (!brokerXmlTemplateService.checkSubscriptionSecuritySettingExists(
+                        updatedBrokerXml, request.getName(), subscription.getSubscriptionName())) {
+                    log.info("Adding subscription security-setting for {}::{}",
+                            request.getName(), subscription.getSubscriptionName());
+                    String subscriptionSecuritySetting = brokerXmlTemplateService.generateSubscriptionSecuritySetting(
+                            request, subscription);
+                    if (subscriptionSecuritySetting != null && !subscriptionSecuritySetting.trim().isEmpty()) {
+                        updatedBrokerXml = insertSecuritySettings(updatedBrokerXml, subscriptionSecuritySetting);
+                    }
+                } else {
+                    log.info("Subscription security-setting already exists for {}::{}",
+                            request.getName(), subscription.getSubscriptionName());
                 }
-            } else {
-                log.info("Subscription security-setting already exists for {}::{}", request.getName(), request.getSubscriptionName());
             }
         }
 
@@ -179,14 +188,19 @@ public class ProvisioningService {
             updatedBrokerXml = insertAddress(updatedBrokerXml, newAddressEntry);
         } else {
             log.info("Address entry already exists for {}", request.getName());
-            // 5b. För topics med subscription: kolla om subscription queue behöver läggas till i existerande address
-            if ("topic".equals(request.getResourceType()) &&
-                    request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
-                if (!brokerXmlTemplateService.checkSubscriptionQueueExistsInAddress(updatedBrokerXml, request)) {
-                    log.info("Adding subscription queue to existing address for {}::{}", request.getName(), request.getSubscriptionName());
-                    updatedBrokerXml = brokerXmlTemplateService.addSubscriptionQueueToExistingAddress(updatedBrokerXml, request);
-                } else {
-                    log.info("Subscription queue already exists in address for {}", request.getName());
+            // 5b. För topics med nya subscriptions: lägg till subscription queues i existerande address
+            if ("topic".equals(request.getResourceType()) && request.hasNewSubscriptions()) {
+                for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
+                    if (!brokerXmlTemplateService.checkSubscriptionQueueExistsInAddress(
+                            updatedBrokerXml, request.getName(), subscription.getSubscriptionName())) {
+                        log.info("Adding subscription queue to existing address for {}::{}",
+                                request.getName(), subscription.getSubscriptionName());
+                        updatedBrokerXml = brokerXmlTemplateService.addSubscriptionQueueToExistingAddress(
+                                updatedBrokerXml, request.getName(), subscription.getSubscriptionName());
+                    } else {
+                        log.info("Subscription queue already exists in address for {}::{}",
+                                request.getName(), subscription.getSubscriptionName());
+                    }
                 }
             }
         }

@@ -1,6 +1,7 @@
 package com.company.mqprovisioning.service.template;
 
 import com.company.mqprovisioning.dto.ProvisionRequest;
+import com.company.mqprovisioning.dto.SubscriptionInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -46,38 +47,72 @@ public class InitPpService {
         String addressVarPattern = "\\$address_" + Pattern.quote(variableName) + "\\s*=";
         boolean addressExists = existingContent.matches("(?s).*" + addressVarPattern + ".*");
 
-        // För topics med subscription: kolla om subscription-variabeln redan finns
-        boolean subscriptionExists = true; // Default true så vi inte lägger till om det inte finns subscription
-        String subscriptionVarName = null;
-        if ("topic".equals(request.getResourceType()) &&
-                request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
-            subscriptionVarName = convertToVariableName(request.getSubscriptionName());
-            String subscriptionVarPattern = "\\$multicast_" + Pattern.quote(subscriptionVarName) + "\\s*=";
-            subscriptionExists = existingContent.matches("(?s).*" + subscriptionVarPattern + ".*");
-        }
+        // Hitta vilka nya subscriptions som saknas i init.pp
+        List<SubscriptionInfo> missingSubscriptions = findMissingSubscriptions(existingContent, request);
 
-        // Om både address och subscription finns (eller ingen subscription), returnera
-        if (addressExists && subscriptionExists) {
+        // Om address finns och inga subscriptions saknas, returnera
+        if (addressExists && missingSubscriptions.isEmpty()) {
             log.info("All variables already exist in init.pp for {}", request.getName());
             return existingContent;
         }
 
         String updatedContent = existingContent;
 
-        // Scenario 1: Address finns inte - lägg till allt
+        // Scenario 1: Address finns inte - lägg till allt (address + alla nya subscriptions)
         if (!addressExists) {
             log.info("Variable $address_{} does not exist, adding all variables", variableName);
             updatedContent = addClassParameters(updatedContent, variableName, request);
             updatedContent = addValidations(updatedContent, variableName, request);
         }
-        // Scenario 2: Address finns men subscription saknas - lägg till endast subscription
-        else if (!subscriptionExists) {
-            log.info("Address exists but subscription variable $multicast_{} is missing, adding it", subscriptionVarName);
-            updatedContent = addSubscriptionParameter(updatedContent, subscriptionVarName, request.getSubscriptionName());
-            updatedContent = addSubscriptionValidation(updatedContent, subscriptionVarName);
+        // Scenario 2: Address finns men subscriptions saknas - lägg till endast saknade subscriptions
+        else if (!missingSubscriptions.isEmpty()) {
+            log.info("Address exists but {} subscription variable(s) are missing, adding them", missingSubscriptions.size());
+            for (SubscriptionInfo subscription : missingSubscriptions) {
+                String subscriptionVarName = convertToVariableName(subscription.getSubscriptionName());
+                log.info("Adding missing subscription variable: $multicast_{}", subscriptionVarName);
+                updatedContent = addSubscriptionParameter(updatedContent, subscriptionVarName, subscription.getSubscriptionName());
+                updatedContent = addSubscriptionValidation(updatedContent, subscriptionVarName);
+            }
         }
 
         return updatedContent;
+    }
+
+    /**
+     * Hittar vilka nya subscriptions som saknas i init.pp.
+     * Returnerar lista av SubscriptionInfo för subscriptions där variabeln inte finns.
+     */
+    private List<SubscriptionInfo> findMissingSubscriptions(String existingContent, ProvisionRequest request) {
+        List<SubscriptionInfo> missing = new ArrayList<>();
+
+        // Hantera nya subscriptions-listan
+        if (request.hasNewSubscriptions()) {
+            for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
+                String subscriptionVarName = convertToVariableName(subscription.getSubscriptionName());
+                String subscriptionVarPattern = "\\$multicast_" + Pattern.quote(subscriptionVarName) + "\\s*=";
+                boolean exists = existingContent.matches("(?s).*" + subscriptionVarPattern + ".*");
+                if (!exists) {
+                    missing.add(subscription);
+                }
+            }
+        }
+        // Fallback: hantera gamla subscriptionName-fältet (bakåtkompatibilitet)
+        else if ("topic".equals(request.getResourceType()) &&
+                request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
+            String subscriptionVarName = convertToVariableName(request.getSubscriptionName());
+            String subscriptionVarPattern = "\\$multicast_" + Pattern.quote(subscriptionVarName) + "\\s*=";
+            boolean exists = existingContent.matches("(?s).*" + subscriptionVarPattern + ".*");
+            if (!exists) {
+                // Skapa en temporär SubscriptionInfo för bakåtkompatibilitet
+                missing.add(SubscriptionInfo.builder()
+                        .subscriptionName(request.getSubscriptionName())
+                        .subscriber("legacy") // Placeholder
+                        .isNew(true)
+                        .build());
+            }
+        }
+
+        return missing;
     }
 
     private String convertToVariableName(String queueName) {
@@ -199,8 +234,15 @@ public class InitPpService {
             // Address-variabel för topic
             lines.add(formatParameterLine("address", variableName, resourceName, alignmentColumn));
 
-            // Subscription-variabel (om angiven)
-            if (request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
+            // Lägg till subscription-variabler från nya subscriptions-listan
+            if (request.hasNewSubscriptions()) {
+                for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
+                    String subscriptionVarName = convertToVariableName(subscription.getSubscriptionName());
+                    lines.add(formatParameterLine("multicast", subscriptionVarName, subscription.getSubscriptionName(), alignmentColumn));
+                }
+            }
+            // Fallback: hantera gamla subscriptionName-fältet (bakåtkompatibilitet)
+            else if (request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
                 String subscriptionVarName = convertToVariableName(request.getSubscriptionName());
                 lines.add(formatParameterLine("multicast", subscriptionVarName, request.getSubscriptionName(), alignmentColumn));
             }
@@ -279,8 +321,15 @@ public class InitPpService {
             // För topic: address-variabel
             validations.add(String.format("validate_string($address_%s)", variableName));
 
-            // Subscription-variabel (om angiven)
-            if (request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
+            // Lägg till validering för alla nya subscriptions
+            if (request.hasNewSubscriptions()) {
+                for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
+                    String subscriptionVarName = convertToVariableName(subscription.getSubscriptionName());
+                    validations.add(String.format("validate_string($multicast_%s)", subscriptionVarName));
+                }
+            }
+            // Fallback: hantera gamla subscriptionName-fältet (bakåtkompatibilitet)
+            else if (request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
                 String subscriptionVarName = convertToVariableName(request.getSubscriptionName());
                 validations.add(String.format("validate_string($multicast_%s)", subscriptionVarName));
             }

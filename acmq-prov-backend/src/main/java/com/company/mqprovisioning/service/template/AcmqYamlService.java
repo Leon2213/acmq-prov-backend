@@ -1,6 +1,7 @@
 package com.company.mqprovisioning.service.template;
 
 import com.company.mqprovisioning.dto.ProvisionRequest;
+import com.company.mqprovisioning.dto.SubscriptionInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -46,6 +47,10 @@ public class AcmqYamlService {
             newUsers.addAll(request.getConsumers());
         }
 
+        // Lägg till subscribers från nya subscriptions (behandlas som konsumenter)
+        Set<String> subscribers = extractSubscribers(request);
+        newUsers.addAll(subscribers);
+
         // Lägg till nya användare om de inte finns (behåll ordningen, lägg till sist)
         for (String user : newUsers) {
             if (!users.contains(user)) {
@@ -55,13 +60,33 @@ public class AcmqYamlService {
         }
 
         // Skapa/uppdatera grupper: könamn-admin, könamn-read, könamn-write
-        updateRoleGroups(roles, queuePrefix, request);
+        updateRoleGroups(roles, queuePrefix, request, subscribers);
 
         // Ersätt users och roles sektionerna i original-innehållet
         String updatedContent = replaceUsersSection(existingContent, users);
         updatedContent = replaceRolesSection(updatedContent, roles);
 
         return updatedContent;
+    }
+
+    /**
+     * Extraherar subscribers från nya subscriptions.
+     * Subscribers behandlas som konsumenter och får read-behörighet.
+     */
+    private Set<String> extractSubscribers(ProvisionRequest request) {
+        Set<String> subscribers = new LinkedHashSet<>();
+
+        if (request.hasNewSubscriptions()) {
+            for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
+                if (subscription.getSubscriber() != null && !subscription.getSubscriber().isEmpty()) {
+                    subscribers.add(subscription.getSubscriber());
+                    log.info("Adding subscriber from subscription '{}': {}",
+                            subscription.getSubscriptionName(), subscription.getSubscriber());
+                }
+            }
+        }
+
+        return subscribers;
     }
 
     /**
@@ -206,7 +231,7 @@ public class AcmqYamlService {
         return fullQueueName;
     }
 
-    private void updateRoleGroups(List<RoleEntry> roles, String queuePrefix, ProvisionRequest request) {
+    private void updateRoleGroups(List<RoleEntry> roles, String queuePrefix, ProvisionRequest request, Set<String> subscribers) {
         // Skapa eller uppdatera tre grupper: admin, read, write
         String adminGroup = queuePrefix + "-admin";
         String readGroup = queuePrefix + "-read";
@@ -215,9 +240,16 @@ public class AcmqYamlService {
         // Admin-grupp (alltid inkludera 'admin' användaren)
         updateOrCreateRole(roles, adminGroup, Collections.singleton("admin"));
 
-        // Read-grupp (konsumenter)
+        // Read-grupp (konsumenter + subscribers från subscriptions)
+        Set<String> readUsers = new LinkedHashSet<>();
         if (request.getConsumers() != null && !request.getConsumers().isEmpty()) {
-            updateOrCreateRole(roles, readGroup, new LinkedHashSet<>(request.getConsumers()));
+            readUsers.addAll(request.getConsumers());
+        }
+        // Lägg till subscribers (de ska kunna läsa/konsumera från sina subscriptions)
+        readUsers.addAll(subscribers);
+
+        if (!readUsers.isEmpty()) {
+            updateOrCreateRole(roles, readGroup, readUsers);
         }
 
         // Write-grupp (producenter)
