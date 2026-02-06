@@ -83,6 +83,10 @@ public class ProvisioningService {
 
         // 2. Läs befintlig acmq.yaml och beräkna uppdateringar
         String existingAcmqContent = gitService.readFile("hieradata", "role/acmq.yaml");
+
+        // 2b. Uppdatera isNewSubscriber flaggan på subscriptions baserat på befintlig hieradata
+        updateNewSubscriberFlags(request, existingAcmqContent);
+
         String updatedAcmqContent = acmqYamlService.updateAcmqYaml(existingAcmqContent, request);
 
         // 3. Kolla om det finns några ändringar - hoppa över PR om inga ändringar
@@ -96,7 +100,7 @@ public class ProvisioningService {
         gitService.overwriteFile("hieradata", "role/acmq.yaml", updatedAcmqContent);
 
         // 5. Commit och push
-        String commitMessage = generateHieradataCommitMessage(request);
+        String commitMessage = generateHieradataCommitMessage(request, existingAcmqContent);
         gitService.commitAndPush("hieradata", branchName, commitMessage);
 
         // 6. Skapa Pull Request
@@ -523,8 +527,9 @@ public class ProvisioningService {
     /**
      * Genererar ett beskrivande commit-meddelande för hieradata (acmq.yaml).
      * Inkluderar information om beställare, team, och vad beställningen avser.
+     * Detekterar automatiskt om subscribers är nya användare genom att kolla befintlig hieradata.
      */
-    private String generateHieradataCommitMessage(ProvisionRequest request) {
+    private String generateHieradataCommitMessage(ProvisionRequest request, String existingAcmqContent) {
         StringBuilder message = new StringBuilder();
         String resourceType = request.getResourceType();
         String resourceName = request.getName();
@@ -571,10 +576,12 @@ public class ProvisioningService {
         message.append("\nÄndring:\n");
         if (hasNewSubscriptions) {
             for (SubscriptionInfo sub : request.getNewSubscriptions()) {
-                String subscriberType = sub.isNewSubscriber() ? "ny användare" : "existerande användare";
+                // Detektera automatiskt om subscribern är ny genom att kolla befintlig hieradata
+                boolean isNewUser = !userExistsInHieradata(existingAcmqContent, sub.getSubscriber());
+                String subscriberType = isNewUser ? "ny användare" : "existerande användare";
                 message.append(String.format("Ny Subscription med %s som subscriber:\n", subscriberType));
                 message.append(String.format(" - %s\n", sub.getSubscriptionName()));
-                String userLabel = sub.isNewSubscriber() ? "(new user)" : "(existing user)";
+                String userLabel = isNewUser ? "(new user)" : "(existing user)";
                 message.append(String.format(" - %s %s\n", sub.getSubscriber(), userLabel));
             }
         } else {
@@ -593,6 +600,34 @@ public class ProvisioningService {
         }
 
         return message.toString().trim();
+    }
+
+    /**
+     * Uppdaterar isNewSubscriber flaggan på alla subscriptions baserat på om
+     * subscribern redan finns i befintlig hieradata.
+     */
+    private void updateNewSubscriberFlags(ProvisionRequest request, String existingAcmqContent) {
+        if (request.getSubscriptions() != null) {
+            for (SubscriptionInfo sub : request.getSubscriptions()) {
+                boolean isNewUser = !userExistsInHieradata(existingAcmqContent, sub.getSubscriber());
+                sub.setNewSubscriber(isNewUser);
+                log.debug("Subscriber '{}' is {} user", sub.getSubscriber(), isNewUser ? "new" : "existing");
+            }
+        }
+    }
+
+    /**
+     * Kontrollerar om en användare redan finns definierad i hieradata (acmq.yaml).
+     * Söker efter användaren i users-sektionen.
+     */
+    private boolean userExistsInHieradata(String acmqContent, String username) {
+        if (acmqContent == null || username == null) {
+            return false;
+        }
+        // Sök efter användaren i YAML-format: "- user: 'username'" eller "- user: username"
+        String pattern1 = "- user: '" + username + "'";
+        String pattern2 = "- user: " + username;
+        return acmqContent.contains(pattern1) || acmqContent.contains(pattern2);
     }
 
     /**
