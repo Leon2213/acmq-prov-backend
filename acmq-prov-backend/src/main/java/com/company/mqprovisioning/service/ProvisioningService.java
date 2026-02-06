@@ -583,59 +583,62 @@ public class ProvisioningService {
 
     /**
      * Genererar ett beskrivande commit-meddelande för puppet (broker.xml.erb, init.pp).
-     * Inkluderar information om security-settings och address-entries.
+     * Inkluderar information om beställare, team, och vad beställningen avser.
      */
     private String generatePuppetCommitMessage(ProvisionRequest request, boolean resourceSecurityExists) {
         StringBuilder message = new StringBuilder();
         String resourceType = request.getResourceType();
         String resourceName = request.getName();
         boolean isNew = "new".equalsIgnoreCase(request.getRequestType());
+        boolean hasNewSubscriptions = "topic".equals(resourceType) && request.hasNewSubscriptions();
 
-        // Huvudrubrik baserat på typ av ändring
+        // Beställarinformation
+        message.append(String.format("Namn på beställare: %s\n", request.getRequester()));
+        message.append(String.format("Team: %s\n", request.getTeam()));
+        message.append(String.format("Ärende: %s\n", request.getTicketNumber()));
+
+        // Beställning avser
+        message.append("\nBeställning avser:\n");
         if (isNew && !resourceSecurityExists) {
-            message.append(String.format("Puppet: Ny %s '%s'", resourceType, resourceName));
-        } else if ("topic".equals(resourceType) && request.hasNewSubscriptions()) {
-            message.append(String.format("Puppet: Ny subscription för %s '%s'", resourceType, resourceName));
+            message.append(String.format("Ny %s.\n", resourceType));
+        } else if (hasNewSubscriptions) {
+            message.append("Ny subscription för befintlig topic.\n");
         } else {
-            message.append(String.format("Puppet: Uppdatering av %s '%s'", resourceType, resourceName));
+            message.append(String.format("Uppdatering av %s.\n", resourceType));
         }
 
-        message.append("\n\n");
+        // Resursinfo
+        message.append(String.format("\n%s: %s\n",
+                "topic".equals(resourceType) ? "Topic" : "Queue",
+                resourceName));
 
-        // Detaljer om vad som skapas/uppdateras
-        if (!resourceSecurityExists) {
-            message.append("Ändringar:\n");
-            message.append("  - Ny security-setting i broker.xml.erb\n");
-            message.append("  - Nya variabler i init.pp\n");
-            message.append("  - Ny address entry i broker.xml.erb\n");
-        }
-
-        // Info om nya subscriptions
-        if ("topic".equals(resourceType) && request.hasNewSubscriptions()) {
-            message.append("Nya subscriptions:\n");
-            for (SubscriptionInfo sub : request.getNewSubscriptions()) {
-                message.append(String.format("  - subscription: %s\n", sub.getSubscriptionName()));
-                message.append(String.format("    subscriber: %s\n", sub.getSubscriber()));
-            }
-        }
-
-        // Info om producers och consumers
+        // Publishers (producers)
         if (request.getProducers() != null && !request.getProducers().isEmpty()) {
-            message.append("Producers:\n");
-            for (String producer : request.getProducers()) {
-                message.append(String.format("  - %s\n", producer));
-            }
+            message.append(String.format("Publisher: %s\n", String.join(", ", request.getProducers())));
         }
-        if (request.getConsumers() != null && !request.getConsumers().isEmpty()) {
-            message.append("Consumers:\n");
-            for (String consumer : request.getConsumers()) {
-                message.append(String.format("  - %s\n", consumer));
+
+        // Consumers (om inte subscription-flow)
+        if (!hasNewSubscriptions && request.getConsumers() != null && !request.getConsumers().isEmpty()) {
+            message.append(String.format("Consumer: %s\n", String.join(", ", request.getConsumers())));
+        }
+
+        // Ändringar för denna beställning
+        if (hasNewSubscriptions) {
+            message.append("\nÄndring för denna beställning:\n");
+            for (SubscriptionInfo sub : request.getNewSubscriptions()) {
+                message.append(String.format("ny subscription: %s\n", sub.getSubscriptionName()));
+                message.append(String.format("subscriber: %s\n", sub.getSubscriber()));
+            }
+        } else if (!isNew || resourceSecurityExists) {
+            message.append("\nÄndring för denna beställning:\n");
+            if (request.getProducers() != null && !request.getProducers().isEmpty()) {
+                message.append(String.format("nya producers: %s\n", String.join(", ", request.getProducers())));
+            }
+            if (request.getConsumers() != null && !request.getConsumers().isEmpty()) {
+                message.append(String.format("nya consumers: %s\n", String.join(", ", request.getConsumers())));
             }
         }
 
-        // Lägg till ärendenummer
-        message.append(String.format("\nÄrende: %s", request.getTicketNumber()));
-
-        return message.toString();
+        return message.toString().trim();
     }
 }
