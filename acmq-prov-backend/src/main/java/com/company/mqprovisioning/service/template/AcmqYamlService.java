@@ -76,6 +76,11 @@ public class AcmqYamlService {
     private Set<String> extractSubscribers(ProvisionRequest request) {
         Set<String> subscribers = new LinkedHashSet<>();
 
+        // Logga för debugging
+        log.info("Checking for new subscriptions. hasNewSubscriptions={}, subscriptions={}",
+                request.hasNewSubscriptions(),
+                request.getSubscriptions() != null ? request.getSubscriptions().size() : 0);
+
         if (request.hasNewSubscriptions()) {
             for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
                 if (subscription.getSubscriber() != null && !subscription.getSubscriber().isEmpty()) {
@@ -84,8 +89,24 @@ public class AcmqYamlService {
                             subscription.getSubscriptionName(), subscription.getSubscriber());
                 }
             }
+        } else if (request.getSubscriptions() != null && !request.getSubscriptions().isEmpty()) {
+            // Fallback: Om subscriptions finns men hasNewSubscriptions() returnerar false,
+            // logga varning och extrahera alla subscribers ändå
+            log.warn("hasNewSubscriptions() returned false but subscriptions exist. Checking all subscriptions.");
+            for (SubscriptionInfo subscription : request.getSubscriptions()) {
+                log.info("Subscription '{}': subscriber='{}', isNew={}",
+                        subscription.getSubscriptionName(),
+                        subscription.getSubscriber(),
+                        subscription.isNew());
+                // Lägg till subscriber oavsett isNew-flaggan om den finns
+                if (subscription.getSubscriber() != null && !subscription.getSubscriber().isEmpty()) {
+                    subscribers.add(subscription.getSubscriber());
+                    log.info("Adding subscriber (from all subscriptions): {}", subscription.getSubscriber());
+                }
+            }
         }
 
+        log.info("Extracted {} subscribers: {}", subscribers.size(), subscribers);
         return subscribers;
     }
 
@@ -237,6 +258,11 @@ public class AcmqYamlService {
         String readGroup = queuePrefix + "-read";
         String writeGroup = queuePrefix + "-write";
 
+        log.info("Updating role groups for namespace '{}'. Consumers={}, Subscribers={}",
+                queuePrefix,
+                request.getConsumers() != null ? request.getConsumers().size() : 0,
+                subscribers.size());
+
         // Admin-grupp (alltid inkludera 'admin' användaren)
         updateOrCreateRole(roles, adminGroup, Collections.singleton("admin"));
 
@@ -248,8 +274,12 @@ public class AcmqYamlService {
         // Lägg till subscribers (de ska kunna läsa/konsumera från sina subscriptions)
         readUsers.addAll(subscribers);
 
+        log.info("Read users to add to '{}': {}", readGroup, readUsers);
+
         if (!readUsers.isEmpty()) {
             updateOrCreateRole(roles, readGroup, readUsers);
+        } else {
+            log.warn("No read users to add for namespace '{}' - readUsers is empty", queuePrefix);
         }
 
         // Write-grupp (producenter)
