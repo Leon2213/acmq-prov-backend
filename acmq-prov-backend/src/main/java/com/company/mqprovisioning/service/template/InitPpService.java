@@ -178,11 +178,17 @@ public class InitPpService {
             }
         }
 
+        // Säkerställ att det finns en radbrytning före ") {" så att den hamnar på egen rad
+        String classParamsStr = newClassParams.toString();
+        if (!classParamsStr.endsWith("\n")) {
+            classParamsStr = classParamsStr + "\n";
+        }
+
         // Ersätt class-parameter-sektionen
         String before = content.substring(0, classStartPos);
         String after = content.substring(classEndPos);
 
-        String result = before + "class icc_artemis_broker (" + newClassParams.toString() + ") {" + after;
+        String result = before + "class icc_artemis_broker (" + classParamsStr + ") {" + after;
 
         log.info("Added {} parameter declarations for {}", newLines.size(), variableName);
         return result;
@@ -412,11 +418,17 @@ public class InitPpService {
             }
         }
 
+        // Säkerställ att det finns en radbrytning före ") {" så att den hamnar på egen rad
+        String classParamsStr = newClassParams.toString();
+        if (!classParamsStr.endsWith("\n")) {
+            classParamsStr = classParamsStr + "\n";
+        }
+
         // Ersätt class-parameter-sektionen
         String before = content.substring(0, classStartPos);
         String after = content.substring(classEndPos);
 
-        String result = before + "class icc_artemis_broker (" + newClassParams.toString() + ") {" + after;
+        String result = before + "class icc_artemis_broker (" + classParamsStr + ") {" + after;
 
         log.info("Added subscription parameter $multicast_{} after $address_{} with ticket {}", subscriptionVarName, topicVarName, ticketNumber);
         return result;
@@ -473,11 +485,17 @@ public class InitPpService {
             }
         }
 
+        // Säkerställ att det finns en radbrytning före ") {" så att den hamnar på egen rad
+        String classParamsStr = newClassParams.toString();
+        if (!classParamsStr.endsWith("\n")) {
+            classParamsStr = classParamsStr + "\n";
+        }
+
         // Ersätt class-parameter-sektionen
         String before = content.substring(0, classStartPos);
         String after = content.substring(classEndPos);
 
-        String result = before + "class icc_artemis_broker (" + newClassParams.toString() + ") {" + after;
+        String result = before + "class icc_artemis_broker (" + classParamsStr + ") {" + after;
 
         log.info("Added subscription parameter declaration for multicast_{}", subscriptionVarName);
         return result;
