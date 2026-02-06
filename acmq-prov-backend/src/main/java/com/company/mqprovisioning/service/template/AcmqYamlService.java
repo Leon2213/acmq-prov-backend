@@ -52,10 +52,14 @@ public class AcmqYamlService {
         newUsers.addAll(subscribers);
 
         // Lägg till nya användare om de inte finns (behåll ordningen, lägg till sist)
+        // Skapa också personlig grupp för varje ny användare
         for (String user : newUsers) {
             if (!users.contains(user)) {
                 users.add(user);
                 log.info("Adding new user: {}", user);
+
+                // Skapa personlig grupp för användaren (group: 'user', users: 'user')
+                createPersonalGroupIfNotExists(roles, user);
             }
         }
 
@@ -67,6 +71,23 @@ public class AcmqYamlService {
         updatedContent = replaceRolesSection(updatedContent, roles);
 
         return updatedContent;
+    }
+
+    /**
+     * Skapar en personlig grupp för en användare om den inte redan finns.
+     * Formatet är: group: 'username', users: 'username'
+     */
+    private void createPersonalGroupIfNotExists(List<RoleEntry> roles, String username) {
+        // Kolla om gruppen redan finns
+        boolean groupExists = roles.stream()
+                .anyMatch(role -> username.equals(role.group));
+
+        if (!groupExists) {
+            roles.add(new RoleEntry(username, username));
+            log.info("Created personal group for user: {}", username);
+        } else {
+            log.debug("Personal group for user '{}' already exists", username);
+        }
     }
 
     /**
