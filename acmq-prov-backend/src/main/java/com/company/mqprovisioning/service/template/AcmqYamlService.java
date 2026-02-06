@@ -232,24 +232,24 @@ public class AcmqYamlService {
     }
 
     private void updateRoleGroups(List<RoleEntry> roles, String queuePrefix, ProvisionRequest request, Set<String> subscribers) {
-        // Skapa eller uppdatera tre grupper: admin, consume, write
+        // Skapa eller uppdatera tre grupper: admin, read, write
         String adminGroup = queuePrefix + "-admin";
-        String consumeGroup = queuePrefix + "-consume";
+        String readGroup = queuePrefix + "-read";
         String writeGroup = queuePrefix + "-write";
 
         // Admin-grupp (alltid inkludera 'admin' användaren)
         updateOrCreateRole(roles, adminGroup, Collections.singleton("admin"));
 
-        // Consume-grupp (konsumenter + subscribers från subscriptions)
-        Set<String> consumeUsers = new LinkedHashSet<>();
+        // Read-grupp (konsumenter + subscribers från subscriptions)
+        Set<String> readUsers = new LinkedHashSet<>();
         if (request.getConsumers() != null && !request.getConsumers().isEmpty()) {
-            consumeUsers.addAll(request.getConsumers());
+            readUsers.addAll(request.getConsumers());
         }
         // Lägg till subscribers (de ska kunna läsa/konsumera från sina subscriptions)
-        consumeUsers.addAll(subscribers);
+        readUsers.addAll(subscribers);
 
-        if (!consumeUsers.isEmpty()) {
-            updateOrCreateRole(roles, consumeGroup, consumeUsers);
+        if (!readUsers.isEmpty()) {
+            updateOrCreateRole(roles, readGroup, readUsers);
         }
 
         // Write-grupp (producenter)
