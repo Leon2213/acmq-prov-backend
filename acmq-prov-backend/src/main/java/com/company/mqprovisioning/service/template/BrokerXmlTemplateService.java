@@ -804,13 +804,21 @@ public class BrokerXmlTemplateService {
             queueIndent = indentMatcher.group(1);
         }
 
+        // Detektera indentering för </multicast> taggen
+        String multicastCloseIndent = "            "; // Default: 12 spaces
+        java.util.regex.Pattern closeIndentPattern = Pattern.compile("\\n(\\s*)</multicast>", Pattern.MULTILINE);
+        java.util.regex.Matcher closeIndentMatcher = closeIndentPattern.matcher(existingContent);
+        if (closeIndentMatcher.find()) {
+            multicastCloseIndent = closeIndentMatcher.group(1);
+        }
+
         // Skapa ny queue-tagg
         String newQueueTag = String.format("%s<queue name=\"<%%= @multicast_%s%%>\"/>",
                 queueIndent, subscriptionVarName);
 
-        // Lägg till queue före </multicast>
+        // Lägg till queue före </multicast> - utan extra radbrytning
         String trimmedMulticastContent = multicastContent.stripTrailing();
-        String updatedMulticastContent = trimmedMulticastContent + "\n" + newQueueTag + "\n            ";
+        String updatedMulticastContent = trimmedMulticastContent + "\n" + newQueueTag + "\n" + multicastCloseIndent;
 
         // Ersätt i innehållet
         String updatedContent = matcher.replaceFirst(
