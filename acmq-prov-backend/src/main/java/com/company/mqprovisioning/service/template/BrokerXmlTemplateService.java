@@ -88,8 +88,9 @@ public class BrokerXmlTemplateService {
         // Sök efter security-setting med ERB-variabel för denna resurs
         // Pattern: <security-setting match="<%= @address_variableName%>.#">
         // Note: variableName contains only alphanumeric characters and underscores (no regex special chars)
+        // Note: \\s* before %%> allows for optional whitespace before closing ERB tag
         String pattern = String.format(
-                "<security-setting\\s+match=\"<%%= @address_%s%%>\\.#\">",
+                "<security-setting\\s+match=\"<%%= @address_%s\\s*%%>\\.#\">",
                 variableName
         );
         boolean exists = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(existingContent).find();
@@ -126,8 +127,9 @@ public class BrokerXmlTemplateService {
         // Hitta hela security-setting blocket för denna resurs
         // Pattern matchar: <security-setting match="<%= @address_xxx%>.#">...</security-setting>
         // Note: variableName contains only alphanumeric characters and underscores (no regex special chars)
+        // Note: \\s* before %%> allows for optional whitespace before closing ERB tag
         String securitySettingPattern = String.format(
-                "(<security-setting\\s+match=\"<%%= @address_%s%%>\\.#\">)(.*?)(</security-setting>)",
+                "(<security-setting\\s+match=\"<%%= @address_%s\\s*%%>\\.#\">)(.*?)(</security-setting>)",
                 variableName
         );
 
@@ -266,8 +268,9 @@ public class BrokerXmlTemplateService {
 
         // Pattern: <security-setting match="<%= @address_xxx%>::<%= @multicast_yyy%>">
         // Note: variableName and subscriptionVarName contain only alphanumeric characters and underscores
+        // Note: \\s* before %%> allows for optional whitespace before closing ERB tag
         String pattern = String.format(
-                "<security-setting\\s+match=\"<%%= @address_%s%%>::<%%= @multicast_%s%%>\">",
+                "<security-setting\\s+match=\"<%%= @address_%s\\s*%%>::<%%= @multicast_%s\\s*%%>\">",
                 variableName,
                 subscriptionVarName
         );
@@ -372,8 +375,9 @@ public class BrokerXmlTemplateService {
         // Hitta hela topic security-setting blocket
         // Pattern matchar: <security-setting match="<%= @address_xxx%>.#">...</security-setting>
         // Note: variableName contains only alphanumeric characters and underscores (no regex special chars)
+        // Note: \\s* before %%> allows for optional whitespace before closing ERB tag
         String securitySettingPattern = String.format(
-                "(<security-setting\\s+match=\"<%%= @address_%s%%>\\.#\">)(.*?)(</security-setting>)",
+                "(<security-setting\\s+match=\"<%%= @address_%s\\s*%%>\\.#\">)(.*?)(</security-setting>)",
                 variableName
         );
 
@@ -469,8 +473,9 @@ public class BrokerXmlTemplateService {
         // Hitta slutet av topic security-setting blocket
         // Pattern: <security-setting match="<%= @address_xxx%>.#">...</security-setting>
         // Note: variableName contains only alphanumeric characters and underscores (no regex special chars)
+        // Note: \\s* before %%> allows for optional whitespace before closing ERB tag
         String topicSecurityPattern = String.format(
-                "(<security-setting\\s+match=\"<%%= @address_%s%%>\\.#\">.*?</security-setting>)",
+                "(<security-setting\\s+match=\"<%%= @address_%s\\s*%%>\\.#\">.*?</security-setting>)",
                 variableName
         );
 
@@ -792,8 +797,9 @@ public class BrokerXmlTemplateService {
         // Sök efter address med ERB-variabel för denna resurs
         // Pattern: <address name="<%= @address_variableName%>">
         // Note: variableName contains only alphanumeric characters and underscores (no regex special chars)
+        // Note: \\s* before %%> allows for optional whitespace before closing ERB tag
         String pattern = String.format(
-                "<address\\s+name=\"<%%= @address_%s%%>\">",
+                "<address\\s+name=\"<%%= @address_%s\\s*%%>\">",
                 variableName
         );
         boolean exists = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(existingContent).find();
@@ -839,8 +845,9 @@ public class BrokerXmlTemplateService {
 
         // Pattern: <queue name="<%= @multicast_subscriptionVarName%>"/>
         // Note: subscriptionVarName contains only alphanumeric characters and underscores
+        // Note: \\s* before %%> allows for optional whitespace before closing ERB tag
         String pattern = String.format(
-                "<queue\\s+name=\"<%%= @multicast_%s%%>\"",
+                "<queue\\s+name=\"<%%= @multicast_%s\\s*%%>\"",
                 subscriptionVarName
         );
         boolean exists = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(existingContent).find();
@@ -884,8 +891,9 @@ public class BrokerXmlTemplateService {
         // Hitta address-blocket för detta topic
         // Pattern: <address name="<%= @address_xxx%>">...<multicast>...</multicast>...</address>
         // Note: variableName contains only alphanumeric characters and underscores (no regex special chars)
+        // Note: \\s* before %%> allows for optional whitespace before closing ERB tag
         String addressPattern = String.format(
-                "(<address\\s+name=\"<%%= @address_%s%%>\">.*?<multicast>)(.*?)(</multicast>)",
+                "(<address\\s+name=\"<%%= @address_%s\\s*%%>\">.*?<multicast>)(.*?)(</multicast>)",
                 variableName
         );
 
