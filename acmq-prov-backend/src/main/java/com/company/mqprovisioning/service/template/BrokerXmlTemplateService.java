@@ -349,6 +349,126 @@ public class BrokerXmlTemplateService {
         return xml.toString();
     }
 
+    /**
+     * Infogar en subscription security-setting direkt efter dess topic security-setting.
+     * Hittar topic security-setting och lägger till subscription-blocket efter det.
+     *
+     * @param existingContent Befintligt innehåll i broker.xml.erb
+     * @param topicName Topic-namnet (t.ex. "pensionsratt.topic.events")
+     * @param subscriptionSecuritySetting Den genererade subscription security-setting XML
+     * @return Uppdaterat innehåll med subscription security-setting infogad efter topic
+     */
+    public String insertSubscriptionSecuritySettingAfterTopic(String existingContent, String topicName, String subscriptionSecuritySetting) {
+        if (subscriptionSecuritySetting == null || subscriptionSecuritySetting.trim().isEmpty()) {
+            return existingContent;
+        }
+
+        String variableName = convertToVariableName(topicName);
+
+        // Hitta slutet av topic security-setting blocket
+        // Pattern: <security-setting match="<%= @address_xxx%>.#">...</security-setting>
+        String topicSecurityPattern = String.format(
+                "(<security-setting\\s+match=\"<%%= @address_%s%%>\\.#\">.*?</security-setting>)",
+                Pattern.quote(variableName)
+        );
+
+        java.util.regex.Pattern pattern = Pattern.compile(topicSecurityPattern, Pattern.DOTALL);
+        java.util.regex.Matcher matcher = pattern.matcher(existingContent);
+
+        if (!matcher.find()) {
+            log.warn("Could not find topic security-setting for '{}', falling back to end insertion", variableName);
+            // Fallback: infoga före </security-settings>
+            return insertAtEndOfSecuritySettings(existingContent, subscriptionSecuritySetting);
+        }
+
+        int insertPosition = matcher.end();
+
+        // Detektera indentering från topic security-setting
+        String baseIndent = detectSecuritySettingIndent(existingContent);
+
+        // Applicera indentering på subscription security-setting
+        String indentedSubscriptionSetting = applySecuritySettingIndentation(subscriptionSecuritySetting, baseIndent);
+
+        // Infoga subscription security-setting direkt efter topic security-setting
+        StringBuilder result = new StringBuilder();
+        result.append(existingContent.substring(0, insertPosition));
+        result.append("\n");
+        result.append(indentedSubscriptionSetting);
+        result.append(existingContent.substring(insertPosition));
+
+        log.info("Inserted subscription security-setting after topic '{}' security-setting", variableName);
+        return result.toString();
+    }
+
+    /**
+     * Fallback-metod: infogar security-setting före </security-settings>
+     */
+    private String insertAtEndOfSecuritySettings(String existingContent, String securitySetting) {
+        String closingTag = "</security-settings>";
+        int insertPosition = existingContent.lastIndexOf(closingTag);
+
+        if (insertPosition == -1) {
+            log.warn("Could not find </security-settings> tag");
+            return existingContent;
+        }
+
+        String baseIndent = detectSecuritySettingIndent(existingContent);
+        String indentedSetting = applySecuritySettingIndentation(securitySetting, baseIndent);
+
+        StringBuilder result = new StringBuilder();
+        result.append(existingContent.substring(0, insertPosition).stripTrailing());
+        result.append("\n");
+        result.append(indentedSetting);
+        result.append("\n");
+        result.append(existingContent.substring(insertPosition));
+
+        return result.toString();
+    }
+
+    /**
+     * Detekterar indenteringen som används för security-setting taggar.
+     */
+    private String detectSecuritySettingIndent(String content) {
+        java.util.regex.Pattern pattern = Pattern.compile(
+                "^([ \\t]*)<security-setting\\s",
+                java.util.regex.Pattern.MULTILINE
+        );
+        java.util.regex.Matcher matcher = pattern.matcher(content);
+
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return "        "; // Default: 8 spaces
+    }
+
+    /**
+     * Applicerar indentering på security-setting XML.
+     */
+    private String applySecuritySettingIndentation(String content, String baseIndent) {
+        StringBuilder result = new StringBuilder();
+        String[] lines = content.split("\n");
+        String innerIndent = baseIndent + "  ";
+
+        for (int i = 0; i < lines.length; i++) {
+            String trimmedLine = lines[i].trim();
+            if (trimmedLine.isEmpty()) {
+                continue;
+            }
+
+            if (trimmedLine.startsWith("<security-setting") || trimmedLine.startsWith("</security-setting")) {
+                result.append(baseIndent).append(trimmedLine);
+            } else {
+                result.append(innerIndent).append(trimmedLine);
+            }
+
+            if (i < lines.length - 1) {
+                result.append("\n");
+            }
+        }
+
+        return result.toString();
+    }
+
     private String generateSecuritySettings(ProvisionRequest request) {
         StringBuilder xml = new StringBuilder();
 

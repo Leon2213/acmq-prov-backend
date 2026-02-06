@@ -161,6 +161,7 @@ public class ProvisioningService {
         }
 
         // 4b. För topics med nya subscriptions: lägg till security-settings för varje ny subscription
+        // Subscription security-settings infogas direkt efter topic security-setting (inte längst ner)
         if ("topic".equals(request.getResourceType()) && request.hasNewSubscriptions()) {
             for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
                 log.info("Processing new subscription: {} with subscriber: {}",
@@ -168,12 +169,14 @@ public class ProvisioningService {
 
                 if (!brokerXmlTemplateService.checkSubscriptionSecuritySettingExists(
                         updatedBrokerXml, request.getName(), subscription.getSubscriptionName())) {
-                    log.info("Adding subscription security-setting for {}::{}",
+                    log.info("Adding subscription security-setting for {}::{} after topic definition",
                             request.getName(), subscription.getSubscriptionName());
                     String subscriptionSecuritySetting = brokerXmlTemplateService.generateSubscriptionSecuritySetting(
                             request, subscription);
                     if (subscriptionSecuritySetting != null && !subscriptionSecuritySetting.trim().isEmpty()) {
-                        updatedBrokerXml = insertSecuritySettings(updatedBrokerXml, subscriptionSecuritySetting);
+                        // Infoga direkt efter topic security-setting istället för längst ner
+                        updatedBrokerXml = brokerXmlTemplateService.insertSubscriptionSecuritySettingAfterTopic(
+                                updatedBrokerXml, request.getName(), subscriptionSecuritySetting);
                     }
                 } else {
                     log.info("Subscription security-setting already exists for {}::{}",
