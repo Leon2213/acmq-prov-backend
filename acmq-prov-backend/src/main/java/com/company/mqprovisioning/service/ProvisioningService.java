@@ -539,57 +539,55 @@ public class ProvisioningService {
         // Beställning avser
         message.append("\nBeställning avser:\n");
         if (isNew) {
-            message.append(String.format("  - Ny %s\n", resourceType));
+            message.append(String.format(" - Ny %s\n", resourceType));
         } else if (hasNewSubscriptions) {
-            message.append("  - Ny subscription för befintlig topic\n");
+            message.append(" - Ny subscription för befintlig topic\n");
         } else {
-            message.append(String.format("  - Uppdatering av %s\n", resourceType));
+            message.append(String.format(" - Uppdatering av %s\n", resourceType));
         }
 
         // Resursinfo
         message.append(String.format("\n%s:\n",
                 "topic".equals(resourceType) ? "Topic" : "Queue"));
-        message.append(String.format("  - %s\n", resourceName));
+        message.append(String.format(" - %s\n", resourceName));
 
-        // Publishers (producers)
+        // Publishers (producers) - utan extra radbrytning före
         if (request.getProducers() != null && !request.getProducers().isEmpty()) {
-            message.append("\nPublisher:\n");
+            message.append("Publisher:\n");
             for (String producer : request.getProducers()) {
-                message.append(String.format("  - %s\n", producer));
+                message.append(String.format(" - %s\n", producer));
             }
         }
 
         // Consumers (om inte subscription-flow)
         if (!hasNewSubscriptions && request.getConsumers() != null && !request.getConsumers().isEmpty()) {
-            message.append("\nConsumer:\n");
+            message.append("Consumer:\n");
             for (String consumer : request.getConsumers()) {
-                message.append(String.format("  - %s\n", consumer));
+                message.append(String.format(" - %s\n", consumer));
             }
         }
 
-        // Ändringar för denna beställning
-        message.append("\nÄndring för denna beställning:\n");
+        // Ändringar
+        message.append("\nÄndring:\n");
         if (hasNewSubscriptions) {
-            message.append("Ny subscription:\n");
             for (SubscriptionInfo sub : request.getNewSubscriptions()) {
-                message.append(String.format("  - %s\n", sub.getSubscriptionName()));
-            }
-            message.append("Subscriber:\n");
-            for (SubscriptionInfo sub : request.getNewSubscriptions()) {
-                // Subscribers från nya subscriptions är nya användare
-                message.append(String.format("  - %s (new user)\n", sub.getSubscriber()));
+                String subscriberType = sub.isNewSubscriber() ? "ny användare" : "existerande användare";
+                message.append(String.format("Ny Subscription med %s som subscriber:\n", subscriberType));
+                message.append(String.format(" - %s\n", sub.getSubscriptionName()));
+                String userLabel = sub.isNewSubscriber() ? "(new user)" : "(existing user)";
+                message.append(String.format(" - %s %s\n", sub.getSubscriber(), userLabel));
             }
         } else {
             if (request.getProducers() != null && !request.getProducers().isEmpty()) {
                 message.append("Nya producers:\n");
                 for (String producer : request.getProducers()) {
-                    message.append(String.format("  - %s\n", producer));
+                    message.append(String.format(" - %s\n", producer));
                 }
             }
             if (request.getConsumers() != null && !request.getConsumers().isEmpty()) {
                 message.append("Nya consumers:\n");
                 for (String consumer : request.getConsumers()) {
-                    message.append(String.format("  - %s\n", consumer));
+                    message.append(String.format(" - %s\n", consumer));
                 }
             }
         }
@@ -616,57 +614,55 @@ public class ProvisioningService {
         // Beställning avser
         message.append("\nBeställning avser:\n");
         if (isNew && !resourceSecurityExists) {
-            message.append(String.format("  - Ny %s\n", resourceType));
+            message.append(String.format(" - Ny %s\n", resourceType));
         } else if (hasNewSubscriptions) {
-            message.append("  - Ny subscription för befintlig topic\n");
+            message.append(" - Ny subscription för befintlig topic\n");
         } else {
-            message.append(String.format("  - Uppdatering av %s\n", resourceType));
+            message.append(String.format(" - Uppdatering av %s\n", resourceType));
         }
 
         // Resursinfo
         message.append(String.format("\n%s:\n",
                 "topic".equals(resourceType) ? "Topic" : "Queue"));
-        message.append(String.format("  - %s\n", resourceName));
+        message.append(String.format(" - %s\n", resourceName));
 
-        // Publishers (producers)
+        // Publishers (producers) - utan extra radbrytning före
         if (request.getProducers() != null && !request.getProducers().isEmpty()) {
-            message.append("\nPublisher:\n");
+            message.append("Publisher:\n");
             for (String producer : request.getProducers()) {
-                message.append(String.format("  - %s\n", producer));
+                message.append(String.format(" - %s\n", producer));
             }
         }
 
         // Consumers (om inte subscription-flow)
         if (!hasNewSubscriptions && request.getConsumers() != null && !request.getConsumers().isEmpty()) {
-            message.append("\nConsumer:\n");
+            message.append("Consumer:\n");
             for (String consumer : request.getConsumers()) {
-                message.append(String.format("  - %s\n", consumer));
+                message.append(String.format(" - %s\n", consumer));
             }
         }
 
-        // Ändringar för denna beställning
-        message.append("\nÄndring för denna beställning:\n");
+        // Ändringar
+        message.append("\nÄndring:\n");
         if (hasNewSubscriptions) {
-            message.append("Ny subscription:\n");
             for (SubscriptionInfo sub : request.getNewSubscriptions()) {
-                message.append(String.format("  - %s\n", sub.getSubscriptionName()));
-            }
-            message.append("Subscriber:\n");
-            for (SubscriptionInfo sub : request.getNewSubscriptions()) {
-                // Subscribers från nya subscriptions är nya användare
-                message.append(String.format("  - %s (new user)\n", sub.getSubscriber()));
+                String subscriberType = sub.isNewSubscriber() ? "ny användare" : "existerande användare";
+                message.append(String.format("Ny Subscription med %s som subscriber:\n", subscriberType));
+                message.append(String.format(" - %s\n", sub.getSubscriptionName()));
+                String userLabel = sub.isNewSubscriber() ? "(new user)" : "(existing user)";
+                message.append(String.format(" - %s %s\n", sub.getSubscriber(), userLabel));
             }
         } else if (!isNew || resourceSecurityExists) {
             if (request.getProducers() != null && !request.getProducers().isEmpty()) {
                 message.append("Nya producers:\n");
                 for (String producer : request.getProducers()) {
-                    message.append(String.format("  - %s\n", producer));
+                    message.append(String.format(" - %s\n", producer));
                 }
             }
             if (request.getConsumers() != null && !request.getConsumers().isEmpty()) {
                 message.append("Nya consumers:\n");
                 for (String consumer : request.getConsumers()) {
-                    message.append(String.format("  - %s\n", consumer));
+                    message.append(String.format(" - %s\n", consumer));
                 }
             }
         }

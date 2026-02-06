@@ -52,4 +52,12 @@ public class SubscriptionInfo {
      */
     @JsonProperty("isNew")
     private boolean isNew;
+
+    /**
+     * Markerar om subscribern är en ny användare som behöver skapas i hieradata.
+     * - true: Användaren finns inte sedan tidigare och måste skapas
+     * - false: Användaren existerar redan i systemet
+     */
+    @JsonProperty("isNewSubscriber")
+    private boolean isNewSubscriber;
 }
