@@ -71,7 +71,8 @@ public class BrokerXmlTemplateService {
         }
 
         // Sök efter security-setting match="namespace.#" (wildcard pattern för namespace)
-        String pattern = String.format("<security-setting\\s+match=\"%s\\.#\">", Pattern.quote(namespacePrefix));
+        // Note: namespacePrefix contains only alphanumeric characters (no regex special chars)
+        String pattern = String.format("<security-setting\\s+match=\"%s\\.#\">", namespacePrefix);
         return Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(existingContent).find();
     }
 
@@ -86,9 +87,10 @@ public class BrokerXmlTemplateService {
 
         // Sök efter security-setting med ERB-variabel för denna resurs
         // Pattern: <security-setting match="<%= @address_variableName%>.#">
+        // Note: variableName contains only alphanumeric characters and underscores (no regex special chars)
         String pattern = String.format(
                 "<security-setting\\s+match=\"<%%= @address_%s%%>\\.#\">",
-                Pattern.quote(variableName)
+                variableName
         );
         boolean exists = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(existingContent).find();
         if (exists) {
@@ -123,9 +125,10 @@ public class BrokerXmlTemplateService {
 
         // Hitta hela security-setting blocket för denna resurs
         // Pattern matchar: <security-setting match="<%= @address_xxx%>.#">...</security-setting>
+        // Note: variableName contains only alphanumeric characters and underscores (no regex special chars)
         String securitySettingPattern = String.format(
                 "(<security-setting\\s+match=\"<%%= @address_%s%%>\\.#\">)(.*?)(</security-setting>)",
-                Pattern.quote(variableName)
+                variableName
         );
 
         java.util.regex.Pattern pattern = Pattern.compile(securitySettingPattern, Pattern.DOTALL);
@@ -262,10 +265,11 @@ public class BrokerXmlTemplateService {
         String subscriptionVarName = convertToVariableName(subscriptionName);
 
         // Pattern: <security-setting match="<%= @address_xxx%>::<%= @multicast_yyy%>">
+        // Note: variableName and subscriptionVarName contain only alphanumeric characters and underscores
         String pattern = String.format(
                 "<security-setting\\s+match=\"<%%= @address_%s%%>::<%%= @multicast_%s%%>\">",
-                Pattern.quote(variableName),
-                Pattern.quote(subscriptionVarName)
+                variableName,
+                subscriptionVarName
         );
         boolean exists = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(existingContent).find();
         if (exists) {
@@ -350,6 +354,103 @@ public class BrokerXmlTemplateService {
     }
 
     /**
+     * Lägger till en subscriber till topic:ets huvudsakliga security-setting.
+     * Subscribern läggs till på consume, browse, createNonDurableQueue, createDurableQueue, createAddress permissions.
+     *
+     * @param existingContent Befintligt innehåll i broker.xml.erb
+     * @param topicName Topic-namnet (t.ex. "pensionsratt.topic.events")
+     * @param subscriber Subscriber-rollen som ska läggas till
+     * @return Uppdaterat innehåll med subscriber tillagd i topic security-setting
+     */
+    public String addSubscriberToTopicSecuritySetting(String existingContent, String topicName, String subscriber) {
+        if (subscriber == null || subscriber.isEmpty()) {
+            return existingContent;
+        }
+
+        String variableName = convertToVariableName(topicName);
+
+        // Hitta hela topic security-setting blocket
+        // Pattern matchar: <security-setting match="<%= @address_xxx%>.#">...</security-setting>
+        // Note: variableName contains only alphanumeric characters and underscores (no regex special chars)
+        String securitySettingPattern = String.format(
+                "(<security-setting\\s+match=\"<%%= @address_%s%%>\\.#\">)(.*?)(</security-setting>)",
+                variableName
+        );
+
+        java.util.regex.Pattern pattern = Pattern.compile(securitySettingPattern, Pattern.DOTALL);
+        java.util.regex.Matcher matcher = pattern.matcher(existingContent);
+
+        if (!matcher.find()) {
+            log.warn("Could not find topic security-setting for '{}' to add subscriber '{}'", variableName, subscriber);
+            return existingContent;
+        }
+
+        String openTag = matcher.group(1);
+        String innerContent = matcher.group(2);
+        String closeTag = matcher.group(3);
+
+        // Lägg till subscriber på dessa permissions
+        String[] permissionsToUpdate = {"consume", "browse", "createNonDurableQueue", "createDurableQueue", "createAddress"};
+
+        for (String permissionType : permissionsToUpdate) {
+            innerContent = addRoleToPermission(innerContent, permissionType, subscriber);
+        }
+
+        // Ersätt det gamla security-setting blocket med det uppdaterade
+        String updatedSecuritySetting = openTag + innerContent + closeTag;
+        String updatedContent = matcher.replaceFirst(java.util.regex.Matcher.quoteReplacement(updatedSecuritySetting));
+
+        log.info("Added subscriber '{}' to topic '{}' security-setting (consume, browse, createNonDurableQueue, createDurableQueue, createAddress)",
+                subscriber, variableName);
+        return updatedContent;
+    }
+
+    /**
+     * Lägger till en roll till en specifik permission-typ om den inte redan finns.
+     */
+    private String addRoleToPermission(String innerContent, String permissionType, String roleToAdd) {
+        // Pattern för att hitta permission: <permission type="xxx" roles="role1,role2"/>
+        String permissionPattern = String.format(
+                "(<permission\\s+type=\"%s\"\\s+roles=\")([^\"]*)(\"\\s*/>)",
+                permissionType
+        );
+
+        java.util.regex.Pattern pattern = Pattern.compile(permissionPattern);
+        java.util.regex.Matcher matcher = pattern.matcher(innerContent);
+
+        if (!matcher.find()) {
+            log.debug("Permission type '{}' not found, skipping add role", permissionType);
+            return innerContent;
+        }
+
+        String prefix = matcher.group(1);
+        String existingRoles = matcher.group(2);
+        String suffix = matcher.group(3);
+
+        // Kolla om rollen redan finns
+        Set<String> roleSet = new HashSet<>();
+        if (existingRoles != null && !existingRoles.isEmpty()) {
+            for (String role : existingRoles.split(",")) {
+                roleSet.add(role.trim());
+            }
+        }
+
+        // Om rollen redan finns, returnera oförändrat innehåll
+        if (roleSet.contains(roleToAdd)) {
+            log.debug("Role '{}' already exists in permission '{}', skipping", roleToAdd, permissionType);
+            return innerContent;
+        }
+
+        // Lägg till den nya rollen
+        String updatedRoles = existingRoles + "," + roleToAdd;
+        String updatedPermission = prefix + updatedRoles + suffix;
+
+        log.debug("Added role '{}' to permission '{}': {} -> {}", roleToAdd, permissionType, existingRoles, updatedRoles);
+
+        return matcher.replaceFirst(java.util.regex.Matcher.quoteReplacement(updatedPermission));
+    }
+
+    /**
      * Infogar en subscription security-setting direkt efter dess topic security-setting.
      * Hittar topic security-setting och lägger till subscription-blocket efter det.
      *
@@ -367,9 +468,10 @@ public class BrokerXmlTemplateService {
 
         // Hitta slutet av topic security-setting blocket
         // Pattern: <security-setting match="<%= @address_xxx%>.#">...</security-setting>
+        // Note: variableName contains only alphanumeric characters and underscores (no regex special chars)
         String topicSecurityPattern = String.format(
                 "(<security-setting\\s+match=\"<%%= @address_%s%%>\\.#\">.*?</security-setting>)",
-                Pattern.quote(variableName)
+                variableName
         );
 
         java.util.regex.Pattern pattern = Pattern.compile(topicSecurityPattern, Pattern.DOTALL);
@@ -689,9 +791,10 @@ public class BrokerXmlTemplateService {
 
         // Sök efter address med ERB-variabel för denna resurs
         // Pattern: <address name="<%= @address_variableName%>">
+        // Note: variableName contains only alphanumeric characters and underscores (no regex special chars)
         String pattern = String.format(
                 "<address\\s+name=\"<%%= @address_%s%%>\">",
-                Pattern.quote(variableName)
+                variableName
         );
         boolean exists = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(existingContent).find();
         if (exists) {
@@ -735,9 +838,10 @@ public class BrokerXmlTemplateService {
         String subscriptionVarName = convertToVariableName(subscriptionName);
 
         // Pattern: <queue name="<%= @multicast_subscriptionVarName%>"/>
+        // Note: subscriptionVarName contains only alphanumeric characters and underscores
         String pattern = String.format(
                 "<queue\\s+name=\"<%%= @multicast_%s%%>\"",
-                Pattern.quote(subscriptionVarName)
+                subscriptionVarName
         );
         boolean exists = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(existingContent).find();
         if (exists) {
@@ -779,9 +883,10 @@ public class BrokerXmlTemplateService {
 
         // Hitta address-blocket för detta topic
         // Pattern: <address name="<%= @address_xxx%>">...<multicast>...</multicast>...</address>
+        // Note: variableName contains only alphanumeric characters and underscores (no regex special chars)
         String addressPattern = String.format(
                 "(<address\\s+name=\"<%%= @address_%s%%>\">.*?<multicast>)(.*?)(</multicast>)",
-                Pattern.quote(variableName)
+                variableName
         );
 
         java.util.regex.Pattern pattern = Pattern.compile(addressPattern, Pattern.DOTALL);

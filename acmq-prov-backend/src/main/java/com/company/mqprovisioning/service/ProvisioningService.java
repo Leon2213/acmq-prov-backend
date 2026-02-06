@@ -167,6 +167,16 @@ public class ProvisioningService {
                 log.info("Processing new subscription: {} with subscriber: {}",
                         subscription.getSubscriptionName(), subscription.getSubscriber());
 
+                // 1. Lägg till subscriber till topic:ets huvudsakliga security-setting
+                //    (consume, browse, createNonDurableQueue, createDurableQueue, createAddress)
+                if (subscription.getSubscriber() != null && !subscription.getSubscriber().isEmpty()) {
+                    log.info("Adding subscriber '{}' to topic '{}' main security-setting",
+                            subscription.getSubscriber(), request.getName());
+                    updatedBrokerXml = brokerXmlTemplateService.addSubscriberToTopicSecuritySetting(
+                            updatedBrokerXml, request.getName(), subscription.getSubscriber());
+                }
+
+                // 2. Lägg till subscription-specifik security-setting (topic::subscription pattern)
                 if (!brokerXmlTemplateService.checkSubscriptionSecuritySettingExists(
                         updatedBrokerXml, request.getName(), subscription.getSubscriptionName())) {
                     log.info("Adding subscription security-setting for {}::{} after topic definition",
