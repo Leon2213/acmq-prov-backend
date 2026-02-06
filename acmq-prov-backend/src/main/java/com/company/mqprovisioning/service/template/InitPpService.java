@@ -391,22 +391,24 @@ public class InitPpService {
         int alignmentColumn = detectAlignmentColumn(classParams);
 
         // Skapa kommentar och subscription-variabeldeklaration
-        String comment = String.format("  # <--- %s --->", ticketNumber != null ? ticketNumber : "NEW");
+        String comment = String.format("  # %s", ticketNumber != null ? ticketNumber : "NEW");
         String newLine = formatParameterLine("multicast", subscriptionVarName, subscriptionValue, alignmentColumn);
 
         // Infoga nya deklarationen direkt efter topic-adressen
         StringBuilder newClassParams = new StringBuilder();
         for (int i = 0; i < lines.length; i++) {
             newClassParams.append(lines[i]);
-            if (i < lines.length - 1) {
-                newClassParams.append("\n");
-            }
 
             // Efter topic-address-raden, lägg till kommentar och ny deklaration
             if (i == topicAddressLineIndex) {
                 newClassParams.append("\n");
                 newClassParams.append(comment).append("\n");
                 newClassParams.append(newLine);
+            }
+
+            // Lägg till radbrytning för alla rader utom sista
+            if (i < lines.length - 1) {
+                newClassParams.append("\n");
             }
         }
 
@@ -528,12 +530,15 @@ public class InitPpService {
             // Infoga efter topic-valideringen
             for (int i = 0; i < lines.length; i++) {
                 newValidatesBody.append(lines[i]);
-                if (i < lines.length - 1) {
-                    newValidatesBody.append("\n");
-                }
-                // Lägg till efter topic-validering
+
+                // Lägg till ny validering efter topic-validering
                 if (i == topicValidationLineIndex) {
                     newValidatesBody.append("\n").append(newValidation);
+                }
+
+                // Lägg till radbrytning för alla rader utom sista
+                if (i < lines.length - 1) {
+                    newValidatesBody.append("\n");
                 }
             }
             newValidatesBody.append("\n\n");
