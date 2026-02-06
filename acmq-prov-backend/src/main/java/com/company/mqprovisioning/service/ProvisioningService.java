@@ -96,17 +96,7 @@ public class ProvisioningService {
         gitService.overwriteFile("hieradata", "role/acmq.yaml", updatedAcmqContent);
 
         // 5. Commit och push
-        String commitMessage = String.format(
-                "[%s] Add users and roles for %s '%s'\n\n" +
-                        "Ticket: %s\nRequestor: %s\nTeam: %s\n\n" +
-                        "Producers: %s\nConsumers: %s",
-                request.getTicketNumber(),
-                request.getResourceType(), request.getName(),
-                request.getTicketNumber(),
-                request.getRequester(), request.getTeam(),
-                request.getProducers() != null ? String.join(", ", request.getProducers()) : "none",
-                request.getConsumers() != null ? String.join(", ", request.getConsumers()) : "none"
-        );
+        String commitMessage = generateHieradataCommitMessage(request);
         gitService.commitAndPush("hieradata", branchName, commitMessage);
 
         // 6. Skapa Pull Request
@@ -221,17 +211,7 @@ public class ProvisioningService {
         gitService.overwriteFile("puppet", brokerXmlPath, updatedBrokerXml);
 
         // 5. Commit och push
-        String commitMessage = String.format(
-                "[%s] Add config for %s '%s'\n\n" +
-                        "Updated files:\n" +
-                        "- init.pp: Added queue/topic variables\n" +
-                        "- broker.xml.erb: Added security settings\n\n" +
-                        "Ticket: %s\nRequestor: %s\nTeam: %s",
-                request.getTicketNumber(),
-                request.getResourceType(), request.getName(),
-                request.getTicketNumber(),
-                request.getRequester(), request.getTeam()
-        );
+        String commitMessage = generatePuppetCommitMessage(request, resourceSecurityExists);
         gitService.commitAndPush("puppet", branchName, commitMessage);
 
         // 6. Skapa Pull Request
@@ -538,5 +518,124 @@ public class ProvisioningService {
         }
 
         return result.toString();
+    }
+
+    /**
+     * Genererar ett beskrivande commit-meddelande för hieradata (acmq.yaml).
+     * Inkluderar information om nya användare och vad beställningen gäller.
+     */
+    private String generateHieradataCommitMessage(ProvisionRequest request) {
+        StringBuilder message = new StringBuilder();
+        String resourceType = request.getResourceType();
+        String resourceName = request.getName();
+        boolean isNew = "new".equalsIgnoreCase(request.getRequestType());
+
+        // Huvudrubrik
+        if (isNew) {
+            message.append(String.format("Hieradata: Ny %s '%s'", resourceType, resourceName));
+        } else {
+            message.append(String.format("Hieradata: Uppdatering av %s '%s'", resourceType, resourceName));
+        }
+
+        // Lägg till info om nya subscriptions
+        if ("topic".equals(resourceType) && request.hasNewSubscriptions()) {
+            if (!isNew) {
+                message.append(" - ny subscription");
+            }
+            message.append("\n\n");
+            message.append("Nya subscriptions:\n");
+            for (SubscriptionInfo sub : request.getNewSubscriptions()) {
+                message.append(String.format("  - subscription: %s, subscriber: %s\n",
+                        sub.getSubscriptionName(), sub.getSubscriber()));
+            }
+        } else {
+            message.append("\n\n");
+        }
+
+        // Lägg till info om nya användare
+        List<String> newUsers = new ArrayList<>();
+        if (request.getProducers() != null) {
+            newUsers.addAll(request.getProducers());
+        }
+        if (request.getConsumers() != null) {
+            newUsers.addAll(request.getConsumers());
+        }
+        if (request.hasNewSubscriptions()) {
+            for (SubscriptionInfo sub : request.getNewSubscriptions()) {
+                if (sub.getSubscriber() != null && !newUsers.contains(sub.getSubscriber())) {
+                    newUsers.add(sub.getSubscriber());
+                }
+            }
+        }
+
+        if (!newUsers.isEmpty()) {
+            message.append("Användare:\n");
+            for (String user : newUsers) {
+                message.append(String.format("  - %s\n", user));
+            }
+        }
+
+        // Lägg till ärendenummer
+        message.append(String.format("\nÄrende: %s", request.getTicketNumber()));
+
+        return message.toString();
+    }
+
+    /**
+     * Genererar ett beskrivande commit-meddelande för puppet (broker.xml.erb, init.pp).
+     * Inkluderar information om security-settings och address-entries.
+     */
+    private String generatePuppetCommitMessage(ProvisionRequest request, boolean resourceSecurityExists) {
+        StringBuilder message = new StringBuilder();
+        String resourceType = request.getResourceType();
+        String resourceName = request.getName();
+        boolean isNew = "new".equalsIgnoreCase(request.getRequestType());
+
+        // Huvudrubrik baserat på typ av ändring
+        if (isNew && !resourceSecurityExists) {
+            message.append(String.format("Puppet: Ny %s '%s'", resourceType, resourceName));
+        } else if ("topic".equals(resourceType) && request.hasNewSubscriptions()) {
+            message.append(String.format("Puppet: Ny subscription för %s '%s'", resourceType, resourceName));
+        } else {
+            message.append(String.format("Puppet: Uppdatering av %s '%s'", resourceType, resourceName));
+        }
+
+        message.append("\n\n");
+
+        // Detaljer om vad som skapas/uppdateras
+        if (!resourceSecurityExists) {
+            message.append("Ändringar:\n");
+            message.append("  - Ny security-setting i broker.xml.erb\n");
+            message.append("  - Nya variabler i init.pp\n");
+            message.append("  - Ny address entry i broker.xml.erb\n");
+        }
+
+        // Info om nya subscriptions
+        if ("topic".equals(resourceType) && request.hasNewSubscriptions()) {
+            message.append("Nya subscriptions:\n");
+            for (SubscriptionInfo sub : request.getNewSubscriptions()) {
+                message.append(String.format("  - subscription: %s\n", sub.getSubscriptionName()));
+                message.append(String.format("    subscriber: %s\n", sub.getSubscriber()));
+            }
+        }
+
+        // Info om producers och consumers
+        if (request.getProducers() != null && !request.getProducers().isEmpty()) {
+            message.append("Producers:\n");
+            for (String producer : request.getProducers()) {
+                message.append(String.format("  - %s\n", producer));
+            }
+        }
+        if (request.getConsumers() != null && !request.getConsumers().isEmpty()) {
+            message.append("Consumers:\n");
+            for (String consumer : request.getConsumers()) {
+                message.append(String.format("  - %s\n", consumer));
+            }
+        }
+
+        // Lägg till ärendenummer
+        message.append(String.format("\nÄrende: %s", request.getTicketNumber()));
+
+        return message.toString();
     }
 }
