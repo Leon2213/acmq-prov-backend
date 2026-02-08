@@ -618,7 +618,7 @@ public class ProvisioningService {
 
     /**
      * Kontrollerar om en användare redan finns definierad i hieradata (acmq.yaml).
-     * Söker efter användaren i users-sektionen med exakt matchning.
+     * Söker efter användaren i artemis_users_properties_users listan.
      */
     private boolean userExistsInHieradata(String acmqContent, String username) {
         if (acmqContent == null || username == null) {
@@ -627,13 +627,13 @@ public class ProvisioningService {
 
         String quotedUsername = java.util.regex.Pattern.quote(username);
 
-        // Matchar olika YAML-format för user-definition:
-        // 1. - user: 'username' (enkla citattecken)
-        // 2. - user: "username" (dubbla citattecken)
-        // 3. - user: username (utan citattecken, följt av whitespace/radslut)
-        String regex1 = "-\\s*user:\\s*'" + quotedUsername + "'";
-        String regex2 = "-\\s*user:\\s*\"" + quotedUsername + "\"";
-        String regex3 = "-\\s*user:\\s*" + quotedUsername + "(?:\\s|$|\\r?\\n)";
+        // Matchar olika YAML-format för user i listan:
+        // 1. - 'username' (enkla citattecken)
+        // 2. - "username" (dubbla citattecken)
+        // 3. - username (utan citattecken, följt av whitespace/radslut)
+        String regex1 = "-\\s*'" + quotedUsername + "'";
+        String regex2 = "-\\s*\"" + quotedUsername + "\"";
+        String regex3 = "-\\s*" + quotedUsername + "(?:\\s|$|\\r?\\n)";
 
         java.util.regex.Pattern pattern1 = java.util.regex.Pattern.compile(regex1);
         java.util.regex.Pattern pattern2 = java.util.regex.Pattern.compile(regex2);
