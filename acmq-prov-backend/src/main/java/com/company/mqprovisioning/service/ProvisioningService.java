@@ -527,14 +527,15 @@ public class ProvisioningService {
     /**
      * Genererar ett beskrivande commit-meddelande för hieradata (acmq.yaml).
      * Inkluderar information om beställare, team, och vad beställningen avser.
-     * Detekterar automatiskt om subscribers är nya användare genom att kolla befintlig hieradata.
+     * Detekterar automatiskt om användare är nya genom att kolla befintlig hieradata.
      */
     private String generateHieradataCommitMessage(ProvisionRequest request, String existingAcmqContent) {
         StringBuilder message = new StringBuilder();
         String resourceType = request.getResourceType();
         String resourceName = request.getName();
         boolean isNew = "new".equalsIgnoreCase(request.getRequestType());
-        boolean hasNewSubscriptions = "topic".equals(resourceType) && request.hasNewSubscriptions();
+        boolean isTopic = "topic".equals(resourceType);
+        boolean hasNewSubscriptions = isTopic && request.hasNewSubscriptions();
 
         // Beställarinformation
         message.append(String.format("Beställare: %s\n", request.getRequester()));
@@ -552,49 +553,63 @@ public class ProvisioningService {
         }
 
         // Resursinfo
-        message.append(String.format("\n%s:\n",
-                "topic".equals(resourceType) ? "Topic" : "Queue"));
+        message.append(String.format("\n%s:\n", isTopic ? "Topic" : "Queue"));
         message.append(String.format(" - %s\n", resourceName));
-
-        // Publishers (producers) - utan extra radbrytning före
-        if (request.getProducers() != null && !request.getProducers().isEmpty()) {
-            message.append("Publisher:\n");
-            for (String producer : request.getProducers()) {
-                message.append(String.format(" - %s\n", producer));
-            }
-        }
-
-        // Consumers (om inte subscription-flow)
-        if (!hasNewSubscriptions && request.getConsumers() != null && !request.getConsumers().isEmpty()) {
-            message.append("Consumer:\n");
-            for (String consumer : request.getConsumers()) {
-                message.append(String.format(" - %s\n", consumer));
-            }
-        }
 
         // Ändringar
         message.append("\nÄndring:\n");
-        if (hasNewSubscriptions) {
-            for (SubscriptionInfo sub : request.getNewSubscriptions()) {
-                // Detektera automatiskt om subscribern är ny genom att kolla befintlig hieradata
-                boolean isNewUser = !userExistsInHieradata(existingAcmqContent, sub.getSubscriber());
-                String subscriberType = isNewUser ? "ny användare" : "existerande användare";
-                message.append(String.format("Ny Subscription med %s som subscriber:\n", subscriberType));
-                message.append(String.format(" - %s\n", sub.getSubscriptionName()));
-                String userLabel = isNewUser ? "(new user)" : "(existing user)";
-                message.append(String.format(" - %s %s\n", sub.getSubscriber(), userLabel));
+
+        if (isTopic) {
+            // Topic-format: Subscription, Publisher, Subscriber
+            if (hasNewSubscriptions) {
+                for (SubscriptionInfo sub : request.getNewSubscriptions()) {
+                    message.append(String.format("Subscription: %s (new subscription)\n", sub.getSubscriptionName()));
+
+                    // Publisher (producers)
+                    if (request.getProducers() != null && !request.getProducers().isEmpty()) {
+                        for (String producer : request.getProducers()) {
+                            boolean isNewProducer = !userExistsInHieradata(existingAcmqContent, producer);
+                            String label = isNewProducer ? "(new user)" : "(existing user)";
+                            message.append(String.format("Publisher: %s %s\n", producer, label));
+                        }
+                    }
+
+                    // Subscriber
+                    boolean isNewSubscriber = !userExistsInHieradata(existingAcmqContent, sub.getSubscriber());
+                    String subscriberLabel = isNewSubscriber ? "(new user)" : "(existing user)";
+                    message.append(String.format("Subscriber: %s %s\n", sub.getSubscriber(), subscriberLabel));
+                }
+            } else {
+                // Endast producers/consumers utan ny subscription
+                if (request.getProducers() != null && !request.getProducers().isEmpty()) {
+                    for (String producer : request.getProducers()) {
+                        boolean isNewProducer = !userExistsInHieradata(existingAcmqContent, producer);
+                        String label = isNewProducer ? "(new user)" : "(existing user)";
+                        message.append(String.format("Publisher: %s %s\n", producer, label));
+                    }
+                }
+                if (request.getConsumers() != null && !request.getConsumers().isEmpty()) {
+                    for (String consumer : request.getConsumers()) {
+                        boolean isNewConsumer = !userExistsInHieradata(existingAcmqContent, consumer);
+                        String label = isNewConsumer ? "(new user)" : "(existing user)";
+                        message.append(String.format("Subscriber: %s %s\n", consumer, label));
+                    }
+                }
             }
         } else {
+            // Queue-format: Producer, Consumer
             if (request.getProducers() != null && !request.getProducers().isEmpty()) {
-                message.append("Nya producers:\n");
                 for (String producer : request.getProducers()) {
-                    message.append(String.format(" - %s\n", producer));
+                    boolean isNewProducer = !userExistsInHieradata(existingAcmqContent, producer);
+                    String label = isNewProducer ? "(new user)" : "(existing user)";
+                    message.append(String.format("Producer: %s %s\n", producer, label));
                 }
             }
             if (request.getConsumers() != null && !request.getConsumers().isEmpty()) {
-                message.append("Nya consumers:\n");
                 for (String consumer : request.getConsumers()) {
-                    message.append(String.format(" - %s\n", consumer));
+                    boolean isNewConsumer = !userExistsInHieradata(existingAcmqContent, consumer);
+                    String label = isNewConsumer ? "(new user)" : "(existing user)";
+                    message.append(String.format("Consumer: %s %s\n", consumer, label));
                 }
             }
         }
@@ -650,13 +665,15 @@ public class ProvisioningService {
     /**
      * Genererar ett beskrivande commit-meddelande för puppet (broker.xml.erb, init.pp).
      * Inkluderar information om beställare, team, och vad beställningen avser.
+     * Använder isNewSubscriber-flaggan som satts av updateNewSubscriberFlags().
      */
     private String generatePuppetCommitMessage(ProvisionRequest request, boolean resourceSecurityExists) {
         StringBuilder message = new StringBuilder();
         String resourceType = request.getResourceType();
         String resourceName = request.getName();
         boolean isNew = "new".equalsIgnoreCase(request.getRequestType());
-        boolean hasNewSubscriptions = "topic".equals(resourceType) && request.hasNewSubscriptions();
+        boolean isTopic = "topic".equals(resourceType);
+        boolean hasNewSubscriptions = isTopic && request.hasNewSubscriptions();
 
         // Beställarinformation
         message.append(String.format("Beställare: %s\n", request.getRequester()));
@@ -674,47 +691,55 @@ public class ProvisioningService {
         }
 
         // Resursinfo
-        message.append(String.format("\n%s:\n",
-                "topic".equals(resourceType) ? "Topic" : "Queue"));
+        message.append(String.format("\n%s:\n", isTopic ? "Topic" : "Queue"));
         message.append(String.format(" - %s\n", resourceName));
-
-        // Publishers (producers) - utan extra radbrytning före
-        if (request.getProducers() != null && !request.getProducers().isEmpty()) {
-            message.append("Publisher:\n");
-            for (String producer : request.getProducers()) {
-                message.append(String.format(" - %s\n", producer));
-            }
-        }
-
-        // Consumers (om inte subscription-flow)
-        if (!hasNewSubscriptions && request.getConsumers() != null && !request.getConsumers().isEmpty()) {
-            message.append("Consumer:\n");
-            for (String consumer : request.getConsumers()) {
-                message.append(String.format(" - %s\n", consumer));
-            }
-        }
 
         // Ändringar
         message.append("\nÄndring:\n");
-        if (hasNewSubscriptions) {
-            for (SubscriptionInfo sub : request.getNewSubscriptions()) {
-                String subscriberType = sub.isNewSubscriber() ? "ny användare" : "existerande användare";
-                message.append(String.format("Ny Subscription med %s som subscriber:\n", subscriberType));
-                message.append(String.format(" - %s\n", sub.getSubscriptionName()));
-                String userLabel = sub.isNewSubscriber() ? "(new user)" : "(existing user)";
-                message.append(String.format(" - %s %s\n", sub.getSubscriber(), userLabel));
+
+        if (isTopic) {
+            // Topic-format: Subscription, Publisher, Subscriber
+            if (hasNewSubscriptions) {
+                for (SubscriptionInfo sub : request.getNewSubscriptions()) {
+                    message.append(String.format("Subscription: %s (new subscription)\n", sub.getSubscriptionName()));
+
+                    // Publisher (producers) - använder isNewSubscriber-liknande flagga om tillgänglig
+                    if (request.getProducers() != null && !request.getProducers().isEmpty()) {
+                        for (String producer : request.getProducers()) {
+                            // För puppet använder vi flaggan som satts i updateNewSubscriberFlags
+                            // Producers har inte egen flagga, så vi antar existing om de redan finns i request
+                            String label = "(existing user)"; // Default för producers
+                            message.append(String.format("Publisher: %s %s\n", producer, label));
+                        }
+                    }
+
+                    // Subscriber - använder flaggan som satts av updateNewSubscriberFlags
+                    String subscriberLabel = sub.isNewSubscriber() ? "(new user)" : "(existing user)";
+                    message.append(String.format("Subscriber: %s %s\n", sub.getSubscriber(), subscriberLabel));
+                }
+            } else {
+                // Endast producers/consumers utan ny subscription
+                if (request.getProducers() != null && !request.getProducers().isEmpty()) {
+                    for (String producer : request.getProducers()) {
+                        message.append(String.format("Publisher: %s\n", producer));
+                    }
+                }
+                if (request.getConsumers() != null && !request.getConsumers().isEmpty()) {
+                    for (String consumer : request.getConsumers()) {
+                        message.append(String.format("Subscriber: %s\n", consumer));
+                    }
+                }
             }
-        } else if (!isNew || resourceSecurityExists) {
+        } else {
+            // Queue-format: Producer, Consumer
             if (request.getProducers() != null && !request.getProducers().isEmpty()) {
-                message.append("Nya producers:\n");
                 for (String producer : request.getProducers()) {
-                    message.append(String.format(" - %s\n", producer));
+                    message.append(String.format("Producer: %s\n", producer));
                 }
             }
             if (request.getConsumers() != null && !request.getConsumers().isEmpty()) {
-                message.append("Nya consumers:\n");
                 for (String consumer : request.getConsumers()) {
-                    message.append(String.format(" - %s\n", consumer));
+                    message.append(String.format("Consumer: %s\n", consumer));
                 }
             }
         }
