@@ -618,16 +618,23 @@ public class ProvisioningService {
 
     /**
      * Kontrollerar om en användare redan finns definierad i hieradata (acmq.yaml).
-     * Söker efter användaren i users-sektionen.
+     * Söker efter användaren i users-sektionen med exakt matchning.
      */
     private boolean userExistsInHieradata(String acmqContent, String username) {
         if (acmqContent == null || username == null) {
             return false;
         }
-        // Sök efter användaren i YAML-format: "- user: 'username'" eller "- user: username"
-        String pattern1 = "- user: '" + username + "'";
-        String pattern2 = "- user: " + username;
-        return acmqContent.contains(pattern1) || acmqContent.contains(pattern2);
+        // Använd regex för exakt matchning av användarnamn
+        // Matchar "- user: 'username'" eller "- user: username" följt av radslut eller annat tecken
+        String regex1 = "-\\s*user:\\s*'" + java.util.regex.Pattern.quote(username) + "'";
+        String regex2 = "-\\s*user:\\s*" + java.util.regex.Pattern.quote(username) + "(\\s|$|\\n)";
+
+        java.util.regex.Pattern pattern1 = java.util.regex.Pattern.compile(regex1);
+        java.util.regex.Pattern pattern2 = java.util.regex.Pattern.compile(regex2);
+
+        boolean exists = pattern1.matcher(acmqContent).find() || pattern2.matcher(acmqContent).find();
+        log.debug("Checking if user '{}' exists in hieradata: {}", username, exists);
+        return exists;
     }
 
     /**
