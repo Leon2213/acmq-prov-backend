@@ -624,16 +624,26 @@ public class ProvisioningService {
         if (acmqContent == null || username == null) {
             return false;
         }
-        // Använd regex för exakt matchning av användarnamn
-        // Matchar "- user: 'username'" eller "- user: username" följt av radslut eller annat tecken
-        String regex1 = "-\\s*user:\\s*'" + java.util.regex.Pattern.quote(username) + "'";
-        String regex2 = "-\\s*user:\\s*" + java.util.regex.Pattern.quote(username) + "(\\s|$|\\n)";
+
+        String quotedUsername = java.util.regex.Pattern.quote(username);
+
+        // Matchar olika YAML-format för user-definition:
+        // 1. - user: 'username' (enkla citattecken)
+        // 2. - user: "username" (dubbla citattecken)
+        // 3. - user: username (utan citattecken, följt av whitespace/radslut)
+        String regex1 = "-\\s*user:\\s*'" + quotedUsername + "'";
+        String regex2 = "-\\s*user:\\s*\"" + quotedUsername + "\"";
+        String regex3 = "-\\s*user:\\s*" + quotedUsername + "(?:\\s|$|\\r?\\n)";
 
         java.util.regex.Pattern pattern1 = java.util.regex.Pattern.compile(regex1);
         java.util.regex.Pattern pattern2 = java.util.regex.Pattern.compile(regex2);
+        java.util.regex.Pattern pattern3 = java.util.regex.Pattern.compile(regex3);
 
-        boolean exists = pattern1.matcher(acmqContent).find() || pattern2.matcher(acmqContent).find();
-        log.debug("Checking if user '{}' exists in hieradata: {}", username, exists);
+        boolean exists = pattern1.matcher(acmqContent).find() ||
+                         pattern2.matcher(acmqContent).find() ||
+                         pattern3.matcher(acmqContent).find();
+
+        log.info("Checking if user '{}' exists in hieradata: {}", username, exists);
         return exists;
     }
 
