@@ -1,11 +1,8 @@
 # Multi-stage build for Spring Boot application
-# Stage 1: Build
-FROM eclipse-temurin:17-jdk-alpine AS builder
+# Stage 1: Build using Maven image (includes JDK 17)
+FROM maven:3.9-eclipse-temurin-17-alpine AS builder
 
 WORKDIR /app
-
-# Install Maven
-RUN apk add --no-cache maven
 
 # Copy pom.xml first for dependency caching
 COPY pom.xml .
@@ -23,9 +20,6 @@ RUN mvn clean package -DskipTests -B
 FROM eclipse-temurin:17-jre-alpine
 
 WORKDIR /app
-
-# Install git (required for JGit operations)
-RUN apk add --no-cache git
 
 # Create non-root user for security
 RUN addgroup -g 1001 appgroup && \
