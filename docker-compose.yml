@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # Backend - MQ Provisioning Service
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mq-provisioning-backend
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    environment:
+      # Git Configuration
+      - GIT_USERNAME=${GIT_USERNAME:-git-user}
+      - BITBUCKET_TOKEN=${BITBUCKET_TOKEN}
+      # Spring profiles
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-default}
+      # Logging
+      - LOGGING_LEVEL_ROOT=${LOG_LEVEL:-INFO}
+    volumes:
+      # Persist git workspace between restarts (optional)
+      - git-workspace:/tmp/mq-provisioning
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - mq-network
+
+  # Frontend - Uncomment and configure when frontend repo is available
+  # frontend:
+  #   build:
+  #     context: ../acmq-prov-frontend  # Adjust path to your frontend repo
+  #     dockerfile: Dockerfile
+  #   container_name: mq-provisioning-frontend
+  #   ports:
+  #     - "${FRONTEND_PORT:-3000}:80"
+  #   environment:
+  #     - VITE_API_URL=http://backend:8080
+  #   depends_on:
+  #     backend:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+  #   networks:
+  #     - mq-network
+
+networks:
+  mq-network:
+    driver: bridge
+
+volumes:
+  git-workspace:
