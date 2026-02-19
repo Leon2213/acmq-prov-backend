@@ -73,10 +73,8 @@ public class ConfigParserService {
             log.info("Parsed {} queues from broker.xml.erb", queues.size());
             log.info("Parsed {} topics from broker.xml.erb", topics.size());
 
-            // Bygg relationer mellan användare och resurser baserat på roller
-            List<String> queueNames = queues.stream().map(QueueDto::getName).collect(Collectors.toList());
-            List<String> topicNames = topics.stream().map(TopicDto::getName).collect(Collectors.toList());
-            Map<String, UserRoles> userRolesMap = buildUserRoles(roleGroups, queueNames, topicNames);
+            // Bygg relationer mellan användare och resurser direkt från parsade köer och topics
+            Map<String, UserRoles> userRolesMap = buildUserRolesFromResources(queues, topics);
 
             // Bygg DTO:er
             List<UserDto> users = buildUserDtos(userNames, userRolesMap);
@@ -542,66 +540,39 @@ public class ConfigParserService {
     }
 
     /**
-     * Bygger användarroller baserat på grupp-medlemskap.
-     * Analyserar gruppnamn för att avgöra typ (admin/read/write).
+     * Bygger användarroller direkt från parsade köer och topics.
+     * Producers och consumers är redan korrekt utlästa från broker.xml.erb:s
+     * security-settings (send/consume permissions), så ingen extra hierdata-lookup behövs.
      */
-    private Map<String, UserRoles> buildUserRoles(Map<String, List<String>> roleGroups,
-                                                  List<String> queueNames,
-                                                  List<String> topicNames) {
+    private Map<String, UserRoles> buildUserRolesFromResources(List<QueueDto> queues, List<TopicDto> topics) {
         Map<String, UserRoles> userRolesMap = new HashMap<>();
 
-        for (Map.Entry<String, List<String>> entry : roleGroups.entrySet()) {
-            String groupName = entry.getKey();
-            List<String> usersInGroup = entry.getValue();
-
-            // Analysera gruppnamnet för att avgöra resurs och roll
-            // Format: <prefix>-admin, <prefix>-read, <prefix>-write
-            String roleType = null;
-            String resourcePrefix = null;
-
-            if (groupName.endsWith("-admin")) {
-                roleType = "admin";
-                resourcePrefix = groupName.substring(0, groupName.length() - 6);
-            } else if (groupName.endsWith("-read")) {
-                roleType = "consumer";
-                resourcePrefix = groupName.substring(0, groupName.length() - 5);
-            } else if (groupName.endsWith("-write")) {
-                roleType = "producer";
-                resourcePrefix = groupName.substring(0, groupName.length() - 6);
-            }
-
-            if (roleType == null || resourcePrefix == null) {
-                continue;
-            }
-
-            // Hitta matchande resurser (köer och topics som börjar med prefixet)
-            final String prefix = resourcePrefix;
-            List<String> matchingQueues = queueNames.stream()
-                    .filter(q -> q.startsWith(prefix + ".") || q.equals(prefix))
-                    .collect(Collectors.toList());
-
-            List<String> matchingTopics = topicNames.stream()
-                    .filter(t -> t.startsWith(prefix + ".") || t.equals(prefix))
-                    .collect(Collectors.toList());
-
-            // Tilldela roller till användare
-            for (String user : usersInGroup) {
-                UserRoles roles = userRolesMap.computeIfAbsent(user, k -> new UserRoles());
-
-                for (String queue : matchingQueues) {
-                    if ("producer".equals(roleType)) {
-                        roles.producerQueues.add(queue);
-                    } else if ("consumer".equals(roleType)) {
-                        roles.consumerQueues.add(queue);
-                    }
+        for (QueueDto queue : queues) {
+            if (queue.getProducers() != null) {
+                for (String producer : queue.getProducers()) {
+                    userRolesMap.computeIfAbsent(producer, k -> new UserRoles())
+                            .producerQueues.add(queue.getName());
                 }
+            }
+            if (queue.getConsumers() != null) {
+                for (String consumer : queue.getConsumers()) {
+                    userRolesMap.computeIfAbsent(consumer, k -> new UserRoles())
+                            .consumerQueues.add(queue.getName());
+                }
+            }
+        }
 
-                for (String topic : matchingTopics) {
-                    if ("producer".equals(roleType)) {
-                        roles.producerTopics.add(topic);
-                    } else if ("consumer".equals(roleType)) {
-                        roles.subscriberTopics.add(topic);
-                    }
+        for (TopicDto topic : topics) {
+            if (topic.getProducers() != null) {
+                for (String producer : topic.getProducers()) {
+                    userRolesMap.computeIfAbsent(producer, k -> new UserRoles())
+                            .producerTopics.add(topic.getName());
+                }
+            }
+            if (topic.getSubscriptions() != null) {
+                for (String subscriber : topic.getSubscriptions().values()) {
+                    userRolesMap.computeIfAbsent(subscriber, k -> new UserRoles())
+                            .subscriberTopics.add(topic.getName());
                 }
             }
         }
