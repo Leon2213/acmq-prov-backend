@@ -1,5 +1,6 @@
 package com.company.mqprovisioning.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -27,16 +28,18 @@ public class UserDto {
     public static class UserRoles {
         private List<RoleItem> producer;
         private List<RoleItem> consumer;
-        private List<RoleItem> subscriber;
+        private List<RoleItem> subscription;
     }
 
     @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class RoleItem {
         private String type; // queue or topic
         private String name;
+        private String subscription; // subscription name, only present for subscription role items
         private String environment;
     }
 

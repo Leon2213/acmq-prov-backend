@@ -570,9 +570,11 @@ public class ConfigParserService {
                 }
             }
             if (topic.getSubscriptions() != null) {
-                for (String subscriber : topic.getSubscriptions().values()) {
+                for (Map.Entry<String, String> sub : topic.getSubscriptions().entrySet()) {
+                    String subscriptionName = sub.getKey();
+                    String subscriber = sub.getValue();
                     userRolesMap.computeIfAbsent(subscriber, k -> new UserRoles())
-                            .subscriberTopics.add(topic.getName());
+                            .subscriptions.put(subscriptionName, topic.getName());
                 }
             }
         }
@@ -592,7 +594,7 @@ public class ConfigParserService {
 
             List<UserDto.RoleItem> producerRoles = new ArrayList<>();
             List<UserDto.RoleItem> consumerRoles = new ArrayList<>();
-            List<UserDto.RoleItem> subscriberRoles = new ArrayList<>();
+            List<UserDto.RoleItem> subscriptionRoles = new ArrayList<>();
 
             // Producer för köer
             for (String queue : roles.producerQueues) {
@@ -621,11 +623,12 @@ public class ConfigParserService {
                         .build());
             }
 
-            // Subscriber för topics
-            for (String topic : roles.subscriberTopics) {
-                subscriberRoles.add(UserDto.RoleItem.builder()
+            // Subscriptions för topics
+            for (Map.Entry<String, String> sub : roles.subscriptions.entrySet()) {
+                subscriptionRoles.add(UserDto.RoleItem.builder()
                         .type("topic")
-                        .name(topic)
+                        .name(sub.getValue())
+                        .subscription(sub.getKey())
                         .environment("prod")
                         .build());
             }
@@ -639,7 +642,7 @@ public class ConfigParserService {
                     .roles(UserDto.UserRoles.builder()
                             .producer(producerRoles)
                             .consumer(consumerRoles)
-                            .subscriber(subscriberRoles)
+                            .subscription(subscriptionRoles)
                             .build())
                     .build();
 
@@ -696,7 +699,8 @@ public class ConfigParserService {
         Set<String> producerQueues = new LinkedHashSet<>();
         Set<String> consumerQueues = new LinkedHashSet<>();
         Set<String> producerTopics = new LinkedHashSet<>();
-        Set<String> subscriberTopics = new LinkedHashSet<>();
+        // subscriptionName -> topicName
+        Map<String, String> subscriptions = new LinkedHashMap<>();
     }
 
     /**
