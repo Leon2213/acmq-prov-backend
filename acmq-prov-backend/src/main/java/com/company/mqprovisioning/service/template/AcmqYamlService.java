@@ -252,9 +252,15 @@ public class AcmqYamlService {
             updateOrCreateRole(roles, readGroup, readUsers);
         }
 
-        // Write-grupp (producenter)
+        // Write-grupp (producenter + subscribers)
+        Set<String> writeUsers = new LinkedHashSet<>();
         if (request.getProducers() != null && !request.getProducers().isEmpty()) {
-            updateOrCreateRole(roles, writeGroup, new LinkedHashSet<>(request.getProducers()));
+            writeUsers.addAll(request.getProducers());
+        }
+        writeUsers.addAll(subscribers);
+
+        if (!writeUsers.isEmpty()) {
+            updateOrCreateRole(roles, writeGroup, writeUsers);
         }
     }
 
