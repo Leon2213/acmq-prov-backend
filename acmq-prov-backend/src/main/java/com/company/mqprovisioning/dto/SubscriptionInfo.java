@@ -27,8 +27,7 @@ public class SubscriptionInfo {
     /**
      * Namnet på subscription (t.ex. "newsletter-subscription", "order-events-sub")
      */
-    @NotBlank(message = "Subscription-namn är obligatoriskt")
-    @Pattern(regexp = "^[a-zA-Z0-9._-]+$",
+    @Pattern(regexp = "^[a-zA-Z0-9._-]*$",
             message = "Subscription-namn får endast innehålla bokstäver, siffror, punkt, underscore och bindestreck")
     private String subscriptionName;
 
