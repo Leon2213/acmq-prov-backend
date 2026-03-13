@@ -6,7 +6,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
-import java.util.Map;
 
 @Data
 @Builder
@@ -20,7 +19,7 @@ public class TopicDto {
     private String description;
     private String team;
     private String createdAt;
-    private Map<String, String> subscriptions;
+    private List<SubscriptionStatus> subscriptions;
     private List<String> producers;
 
     /**
@@ -34,6 +33,17 @@ public class TopicDto {
                 .team(team)
                 .description(description)
                 .build();
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class SubscriptionStatus {
+        private String name;
+        private String subscriber;
+        private boolean prodEnabled;
+        private boolean testEnabled;
     }
 
     @Data

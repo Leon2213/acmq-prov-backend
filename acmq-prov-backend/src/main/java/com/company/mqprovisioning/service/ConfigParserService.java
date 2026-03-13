@@ -28,6 +28,7 @@ public class ConfigParserService {
     private final GitService gitService;
 
     private static final String ACMQ_YAML_PATH = "role/acmq.yaml";
+    private static final String ACMQ_YAML_PROD_PATH = "pm_env/pro/acmq.yaml";
     private static final String INIT_PP_PATH = "modules/icc_artemis_broker/manifests/init.pp";
     private static final String BROKER_XML_PATH = "modules/icc_artemis_broker/templates/brokers/etc/broker.xml.erb";
 
@@ -48,10 +49,14 @@ public class ConfigParserService {
 
             // Läs filer
             String acmqYamlContent = gitService.readFile("hieradata", ACMQ_YAML_PATH);
+            String acmqYamlProdContent = gitService.readFile("hieradata", ACMQ_YAML_PROD_PATH);
             String brokerXmlContent = gitService.readFile("puppet", BROKER_XML_PATH);
 
             if (acmqYamlContent.isEmpty()) {
-                log.warn("acmq.yaml is empty or not found");
+                log.warn("acmq.yaml (test) is empty or not found");
+            }
+            if (acmqYamlProdContent.isEmpty()) {
+                log.warn("acmq.yaml (prod) is empty or not found at {}", ACMQ_YAML_PROD_PATH);
             }
             if (brokerXmlContent.isEmpty()) {
                 log.warn("broker.xml.erb is empty or not found");
@@ -61,11 +66,15 @@ public class ConfigParserService {
             List<String> userNames = parseUsers(acmqYamlContent);
             Map<String, List<String>> roleGroups = parseRoles(acmqYamlContent);
 
+            // Parsa subscription enabled-status från respektive miljöfil
+            Map<String, Boolean> testEnabledMap = parseSubscriptionEnabled(acmqYamlContent);
+            Map<String, Boolean> prodEnabledMap = parseSubscriptionEnabled(acmqYamlProdContent);
+
             // Parsa köer med producers och consumers från broker.xml.erb
             List<QueueDto> queues = parseQueuesFromBrokerXml(brokerXmlContent, roleGroups);
 
             // Parsa topics med producers och subscribers från broker.xml.erb
-            List<TopicDto> topics = parseTopicsFromBrokerXml(brokerXmlContent, roleGroups);
+            List<TopicDto> topics = parseTopicsFromBrokerXml(brokerXmlContent, roleGroups, testEnabledMap, prodEnabledMap);
 
             // Debug loggning
             log.info("Parsed {} users from acmq.yaml", userNames.size());
@@ -220,6 +229,36 @@ public class ConfigParserService {
     }
 
     /**
+     * Parsar subscription enabled/disabled-status från en acmq.yaml-fil.
+     * Läser rader på formatet:
+     *   icc_artemis_broker::multicast_<subscriptionVarName>_enabled: 'true'
+     *
+     * @return Map från subscriptionVarName till enabled (true/false)
+     */
+    private Map<String, Boolean> parseSubscriptionEnabled(String content) {
+        Map<String, Boolean> result = new LinkedHashMap<>();
+
+        if (content == null || content.isEmpty()) {
+            return result;
+        }
+
+        Pattern pattern = Pattern.compile(
+                "icc_artemis_broker::multicast_([a-zA-Z0-9_]+)_enabled:\\s*'(true|false)'",
+                Pattern.MULTILINE
+        );
+
+        Matcher matcher = pattern.matcher(content);
+        while (matcher.find()) {
+            String varName = matcher.group(1);
+            boolean enabled = "true".equals(matcher.group(2));
+            result.put(varName, enabled);
+        }
+
+        log.info("Parsed {} subscription enabled flags", result.size());
+        return result;
+    }
+
+    /**
      * Parsar topics från broker.xml.erb baserat på security-settings.
      *
      * Topics identifieras genom security-settings med @address_*_topic_* i match-attributet.
@@ -234,7 +273,9 @@ public class ConfigParserService {
      *   <permission type="consume" roles="paypay-admin,paypay-incidentprocess"/>
      * </security-setting>
      */
-    private List<TopicDto> parseTopicsFromBrokerXml(String content, Map<String, List<String>> roleGroups) {
+    private List<TopicDto> parseTopicsFromBrokerXml(String content, Map<String, List<String>> roleGroups,
+                                                     Map<String, Boolean> testEnabledMap,
+                                                     Map<String, Boolean> prodEnabledMap) {
         List<TopicDto> topics = new ArrayList<>();
 
         if (content == null || content.isEmpty()) {
@@ -292,16 +333,17 @@ public class ConfigParserService {
         Matcher subscriptionMatcher = subscriptionPattern.matcher(content);
         while (subscriptionMatcher.find()) {
             String topicVarName = subscriptionMatcher.group(1);
-            String subsrciptionNameRaw = subscriptionMatcher.group(2); // t.ex. "processed_subscription_incidentprocess" eller "processed_paypay_incidentprocess"
-            String subscriptionName = subsrciptionNameRaw.replace("_", "-");
+            String subscriptionVarName = subscriptionMatcher.group(2); // t.ex. "processed_subscription_incidentprocess"
+            String subscriptionDisplayName = subscriptionVarName.replace("_", "-");
 
             if (topicDataMap.containsKey(topicVarName)) {
-                // Extrahera subscription-namn med fallback-logik
-                String subscriberNameRaw = extractSubscriptionName(subsrciptionNameRaw);
+                String subscriberNameRaw = extractSubscriptionName(subscriptionVarName);
                 String subscriberName = subscriberNameRaw.replace("_", "-");
-                topicDataMap.get(topicVarName).subscriptions.put(subscriptionName, subscriberName);
+                // Spara varName som nyckel för att kunna slå upp enabled-status
+                topicDataMap.get(topicVarName).subscriptions.put(subscriptionVarName,
+                        new String[]{subscriptionDisplayName, subscriberName});
 
-                log.debug("Topic '{}': found subscriber '{}' from multicast '{}'", topicVarName, subscriberName, subscriptionName);
+                log.debug("Topic '{}': found subscriber '{}' from multicast '{}'", topicVarName, subscriberName, subscriptionDisplayName);
             }
         }
 
@@ -314,6 +356,22 @@ public class ConfigParserService {
             // Konvertera variabelnamn till visningsnamn (ersätt _ med .)
             String displayName = topicVarName.replace("_", ".");
 
+            // Bygg SubscriptionStatus-lista med enabled-flaggor från hieradata-yaml
+            List<TopicDto.SubscriptionStatus> subscriptionList = new ArrayList<>();
+            for (Map.Entry<String, String[]> sub : data.subscriptions.entrySet()) {
+                String subVarName = sub.getKey();
+                String subDisplayName = sub.getValue()[0];
+                String subscriber = sub.getValue()[1];
+                boolean testEnabled = testEnabledMap.getOrDefault(subVarName, true);
+                boolean prodEnabled = prodEnabledMap.getOrDefault(subVarName, true);
+                subscriptionList.add(TopicDto.SubscriptionStatus.builder()
+                        .name(subDisplayName)
+                        .subscriber(subscriber)
+                        .testEnabled(testEnabled)
+                        .prodEnabled(prodEnabled)
+                        .build());
+            }
+
             TopicDto topic = TopicDto.builder()
                     .id("topic-" + index++)
                     .name(displayName)
@@ -322,12 +380,12 @@ public class ConfigParserService {
                     .team(extractTeamFromTopicName(topicVarName))
                     .createdAt(java.time.LocalDate.now().toString())
                     .producers(new ArrayList<>(data.producers))
-                    .subscriptions(data.subscriptions != null ? new HashMap<>(data.subscriptions) : new HashMap<>())
+                    .subscriptions(subscriptionList)
                     .build();
 
             topics.add(topic);
 
-            log.debug("Topic '{}': producers={}, subscribers={}", displayName, data.producers, data.subscribers);
+            log.debug("Topic '{}': producers={}, subscriptions={}", displayName, data.producers, subscriptionList.size());
         }
 
         return topics;
@@ -340,7 +398,8 @@ public class ConfigParserService {
         String varName;
         Set<String> producers = new LinkedHashSet<>();
         Set<String> subscribers = new LinkedHashSet<>();
-        Map<String, String> subscriptions = new HashMap<>();
+        // subscriptionVarName -> [displayName, subscriberName]
+        Map<String, String[]> subscriptions = new LinkedHashMap<>();
 
         TopicData(String varName, Set<String> producers) {
             this.varName = varName;
@@ -570,11 +629,9 @@ public class ConfigParserService {
                 }
             }
             if (topic.getSubscriptions() != null) {
-                for (Map.Entry<String, String> sub : topic.getSubscriptions().entrySet()) {
-                    String subscriptionName = sub.getKey();
-                    String subscriber = sub.getValue();
-                    userRolesMap.computeIfAbsent(subscriber, k -> new UserRoles())
-                            .subscriptions.put(subscriptionName, topic.getName());
+                for (TopicDto.SubscriptionStatus sub : topic.getSubscriptions()) {
+                    userRolesMap.computeIfAbsent(sub.getSubscriber(), k -> new UserRoles())
+                            .subscriptions.put(sub.getName(), topic.getName());
                 }
             }
         }
