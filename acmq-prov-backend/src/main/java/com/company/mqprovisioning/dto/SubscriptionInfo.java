@@ -46,4 +46,16 @@ public class SubscriptionInfo {
      * - false: Subscription existerar redan, ingen ändring behövs
      */
     private boolean isNew;
+
+    /**
+     * Enabled-status för test-miljön (role/acmq.yaml).
+     * null = ingen ändring önskad.
+     */
+    private Boolean testEnabled;
+
+    /**
+     * Enabled-status för prod-miljön (pm_env/pro/acmq.yaml).
+     * null = ingen ändring önskad.
+     */
+    private Boolean prodEnabled;
 }

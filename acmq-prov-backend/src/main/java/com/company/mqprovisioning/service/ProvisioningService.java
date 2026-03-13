@@ -74,6 +74,9 @@ public class ProvisioningService {
         }
     }
 
+    private static final String HIERADATA_TEST_PATH = "role/acmq.yaml";
+    private static final String HIERADATA_PROD_PATH = "pm_env/pro/acmq.yaml";
+
     private String updateHieradataRepo(ProvisionRequest request, String requestId) {
         // Använd ärendenummer för branchnamn
         String branchName = String.format("feature/%s", request.getTicketNumber());
@@ -81,21 +84,38 @@ public class ProvisioningService {
         // 1. Clone/pull hieradata repo
         gitService.prepareRepoHieradata();
 
-        // 2. Läs befintlig acmq.yaml och beräkna uppdateringar
-        String existingAcmqContent = gitService.readFile("hieradata", "role/acmq.yaml");
-        String updatedAcmqContent = acmqYamlService.updateAcmqYaml(existingAcmqContent, request);
+        // 2. Uppdatera role/acmq.yaml (test): användare, roller och subscription enabled-flaggor
+        String existingTestContent = gitService.readFile("hieradata", HIERADATA_TEST_PATH);
+        String updatedTestContent = acmqYamlService.updateAcmqYaml(existingTestContent, request);
+        updatedTestContent = acmqYamlService.updateSubscriptionEnabledFlags(
+                updatedTestContent, request.getSubscriptions(), false);
 
-        // 3. Kolla om det finns några ändringar - hoppa över PR om inga ändringar
-        if (existingAcmqContent.equals(updatedAcmqContent)) {
+        // 3. Uppdatera pm_env/pro/acmq.yaml (prod): subscription enabled-flaggor
+        String existingProdContent = gitService.readFile("hieradata", HIERADATA_PROD_PATH);
+        String updatedProdContent = acmqYamlService.updateSubscriptionEnabledFlags(
+                existingProdContent, request.getSubscriptions(), true);
+
+        boolean testChanged = !existingTestContent.equals(updatedTestContent);
+        boolean prodChanged = !existingProdContent.equals(updatedProdContent);
+
+        // 4. Kolla om det finns några ändringar - hoppa över PR om inga ändringar
+        if (!testChanged && !prodChanged) {
             log.info("No changes needed in hieradata for request {} - all users/roles already exist", requestId);
             return null; // Ingen PR behövs
         }
 
-        // 4. Skapa ny branch och genomför ändringar
+        // 5. Skapa ny branch och genomför ändringar
         gitService.createBranchHieradata(branchName);
-        gitService.overwriteFile("hieradata", "role/acmq.yaml", updatedAcmqContent);
+        if (testChanged) {
+            gitService.overwriteFile("hieradata", HIERADATA_TEST_PATH, updatedTestContent);
+            log.info("Updated hieradata test file ({}) for request {}", HIERADATA_TEST_PATH, requestId);
+        }
+        if (prodChanged) {
+            gitService.overwriteFile("hieradata", HIERADATA_PROD_PATH, updatedProdContent);
+            log.info("Updated hieradata prod file ({}) for request {}", HIERADATA_PROD_PATH, requestId);
+        }
 
-        // 5. Commit och push
+        // 6. Commit och push
         String commitMessage = String.format(
                 "[%s] Add users and roles for %s '%s'\n\n" +
                         "Ticket: %s\nRequestor: %s\nTeam: %s\n\n" +
@@ -109,7 +129,7 @@ public class ProvisioningService {
         );
         gitService.commitAndPush("hieradata", branchName, commitMessage);
 
-        // 6. Skapa Pull Request
+        // 7. Skapa Pull Request
 //        String prUrl = gitService.createPullRequest(
 //            "hieradata",
 //            branchName,

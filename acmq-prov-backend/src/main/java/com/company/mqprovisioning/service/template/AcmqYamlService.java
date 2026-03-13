@@ -264,6 +264,85 @@ public class AcmqYamlService {
         }
     }
 
+    /**
+     * Uppdaterar enabled-flaggor för befintliga subscriptions i en YAML-fil.
+     * Hanterar rader på formatet:
+     *   icc_artemis_broker::multicast_<varName>_enabled: 'true'
+     *
+     * @param existingContent YAML-filens nuvarande innehåll
+     * @param subscriptions   lista med subscription-uppdateringar (isNew=false filtreras ut)
+     * @param useProdEnabled  true = använd prodEnabled-fältet, false = använd testEnabled-fältet
+     */
+    public String updateSubscriptionEnabledFlags(String existingContent, List<SubscriptionInfo> subscriptions, boolean useProdEnabled) {
+        if (subscriptions == null || subscriptions.isEmpty() || existingContent == null) {
+            return existingContent;
+        }
+
+        String content = existingContent;
+        for (SubscriptionInfo sub : subscriptions) {
+            if (sub.isNew()) continue;
+
+            Boolean enabled = useProdEnabled ? sub.getProdEnabled() : sub.getTestEnabled();
+            if (enabled == null) continue; // ingen ändring önskad för denna miljö
+
+            String varName = resolveVarName(sub, content);
+            if (varName == null) {
+                log.warn("Kunde inte avgöra varName för subscription med subscriber '{}', hoppar över enabled-uppdatering",
+                        sub.getSubscriber());
+                continue;
+            }
+
+            content = setEnabledFlag(content, varName, enabled);
+            log.info("Updated subscription enabled flag: multicast_{}_enabled = {}", varName, enabled);
+        }
+        return content;
+    }
+
+    /**
+     * Försöker avgöra subscriptionens variabelnamn (med underscores).
+     * Försök 1: subscriptionName (display-namn med bindestreck → underscores).
+     * Försök 2: sök i YAML efter befintlig enabled-rad som matchar subscriber-namnet.
+     */
+    private String resolveVarName(SubscriptionInfo sub, String content) {
+        if (sub.getSubscriptionName() != null && !sub.getSubscriptionName().isEmpty()) {
+            return sub.getSubscriptionName().replace("-", "_");
+        }
+        if (sub.getSubscriber() != null && !sub.getSubscriber().isEmpty()) {
+            String subscriberVar = sub.getSubscriber().replace("-", "_");
+            Pattern pattern = Pattern.compile(
+                    "icc_artemis_broker::multicast_([a-zA-Z0-9_]+_subscription_" + Pattern.quote(subscriberVar) + ")_enabled"
+            );
+            Matcher matcher = pattern.matcher(content);
+            if (matcher.find()) {
+                return matcher.group(1);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Sätter enabled-flaggan för en subscription i YAML-innehållet.
+     * Om raden redan finns ersätts värdet. Om den inte finns och vi sätter false,
+     * läggs raden till i slutet (true är default och behöver inte vara explicit).
+     */
+    private String setEnabledFlag(String content, String varName, boolean enabled) {
+        String key = "icc_artemis_broker::multicast_" + varName + "_enabled";
+        String newLine = key + ": '" + enabled + "'";
+
+        Pattern pattern = Pattern.compile(
+                "^" + Pattern.quote(key) + ":\\s*'(true|false)'",
+                Pattern.MULTILINE
+        );
+        Matcher matcher = pattern.matcher(content);
+        if (matcher.find()) {
+            return matcher.replaceFirst(Matcher.quoteReplacement(newLine));
+        } else if (!enabled) {
+            // Raden finns inte och vi sätter false – lägg till explicit (true är default)
+            return content + (content.endsWith("\n") ? "" : "\n") + newLine + "\n";
+        }
+        return content; // true är default, ingen rad behövs
+    }
+
     private void updateOrCreateRole(List<RoleEntry> roles, String groupName, Set<String> usersToAdd) {
         // Hitta befintlig grupp
         Optional<RoleEntry> existingRole = roles.stream()
