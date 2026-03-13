@@ -262,9 +262,9 @@ public class ProvisioningService {
     }
 
     private void validateRequest(ProvisionRequest request) {
-        if (!request.hasConsumersOrProducers()) {
+        if (!request.hasConsumersOrProducers() && !request.hasSubscriptions()) {
             throw new IllegalArgumentException(
-                    "Minst en konsument eller producent måste anges"
+                    "Minst en konsument, producent eller subscription måste anges"
             );
         }
 

@@ -60,7 +60,6 @@ public class ProvisionRequest {
 
     private String description;
 
-    @NotBlank(message = "Team är obligatoriskt")
     private String team;
 
     @NotBlank(message = "Beställare är obligatoriskt")
