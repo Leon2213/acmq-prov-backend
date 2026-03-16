@@ -51,10 +51,13 @@ public class ProvisioningService {
                 log.info("Created hieradata PR for request {}", requestId);
             }
 
-            // 2. Uppdatera Puppet broker.xml.erb repo
-            log.info("Updating broker.xml.erb repository for request {}", requestId);
+            // 2. Uppdatera Puppet broker.xml.erb repo (returnerar null om inga ändringar behövs)
+            log.info("Checking puppet repository for request {}", requestId);
             String brokerXmlPR = updateBrokerXmlRepo(request, requestId);
-            pullRequestUrls.add(brokerXmlPR);
+            if (brokerXmlPR != null) {
+                pullRequestUrls.add(brokerXmlPR);
+                log.info("Created puppet PR for request {}", requestId);
+            }
 
             ProvisionResponse response = ProvisionResponse.success(requestId, pullRequestUrls);
             requestCache.put(requestId, response);
@@ -227,7 +230,15 @@ public class ProvisioningService {
 
         gitService.overwriteFile("puppet", brokerXmlPath, updatedBrokerXml);
 
-        // 5. Commit och push
+        // 5. Commit och push – bara om något faktiskt ändrats
+        boolean initPpChanged = !existingInitPp.equals(updatedInitPp);
+        boolean brokerXmlChanged = !existingBrokerXml.equals(updatedBrokerXml);
+
+        if (!initPpChanged && !brokerXmlChanged) {
+            log.info("No changes needed in puppet repo for request {} - skipping commit", requestId);
+            return null;
+        }
+
         String commitMessage = String.format(
                 "[%s] Add config for %s '%s'\n\n" +
                         "Updated files:\n" +
