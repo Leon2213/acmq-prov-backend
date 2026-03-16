@@ -70,14 +70,15 @@ public class AcmqYamlService {
     }
 
     /**
-     * Extraherar subscribers från nya subscriptions.
-     * Subscribers behandlas som konsumenter och får read-behörighet.
+     * Extraherar subscribers från subscriptions.
+     * Använder ALLA subscriptions (isNew-flaggan är opålitlig från frontend).
+     * Subscribers läggs till i både read- och write-gruppen.
      */
     private Set<String> extractSubscribers(ProvisionRequest request) {
         Set<String> subscribers = new LinkedHashSet<>();
 
-        if (request.hasNewSubscriptions()) {
-            for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
+        if (request.getSubscriptions() != null) {
+            for (SubscriptionInfo subscription : request.getSubscriptions()) {
                 if (subscription.getSubscriber() != null && !subscription.getSubscriber().isEmpty()) {
                     subscribers.add(subscription.getSubscriber());
                     log.info("Adding subscriber from subscription '{}': {}",
