@@ -119,16 +119,19 @@ public class ProvisioningService {
         }
 
         // 6. Commit och push
+        String subscriptionChanges = buildSubscriptionChangeSummary(request);
         String commitMessage = String.format(
-                "[%s] Add users and roles for %s '%s'\n\n" +
+                "[%s] %s %s '%s'\n\n" +
                         "Ticket: %s\nRequestor: %s\nTeam: %s\n\n" +
-                        "Producers: %s\nConsumers: %s",
+                        "Producers: %s\nConsumers: %s%s",
                 request.getTicketNumber(),
+                subscriptionChanges.isEmpty() ? "Add users and roles for" : "Update subscription for",
                 request.getResourceType(), request.getName(),
                 request.getTicketNumber(),
                 request.getRequester(), request.getTeam(),
                 request.getProducers() != null ? String.join(", ", request.getProducers()) : "none",
-                request.getConsumers() != null ? String.join(", ", request.getConsumers()) : "none"
+                request.getConsumers() != null ? String.join(", ", request.getConsumers()) : "none",
+                subscriptionChanges.isEmpty() ? "" : "\n\nSubscription changes:\n" + subscriptionChanges
         );
         gitService.commitAndPush("hieradata", branchName, commitMessage);
 
@@ -262,6 +265,35 @@ public class ProvisioningService {
         );*/
 
         return "pr url att fixa senare";
+    }
+
+    /**
+     * Bygger en rad per subscription som har fått enabled/disabled-ändring.
+     * Exempel: "  - incidentprocess: test=false, prod=true"
+     * Returnerar tom sträng om inga subscription-ändringar finns.
+     */
+    private String buildSubscriptionChangeSummary(ProvisionRequest request) {
+        if (request.getSubscriptions() == null || request.getSubscriptions().isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (SubscriptionInfo sub : request.getSubscriptions()) {
+            if (sub.isNew()) continue;
+            if (sub.getTestEnabled() == null && sub.getProdEnabled() == null) continue;
+
+            String name = sub.getSubscriptionName() != null ? sub.getSubscriptionName()
+                    : sub.getSubscriber() != null ? sub.getSubscriber() : "unknown";
+            StringBuilder changes = new StringBuilder();
+            if (sub.getTestEnabled() != null) {
+                changes.append("test=").append(sub.getTestEnabled() ? "enabled" : "disabled");
+            }
+            if (sub.getProdEnabled() != null) {
+                if (changes.length() > 0) changes.append(", ");
+                changes.append("prod=").append(sub.getProdEnabled() ? "enabled" : "disabled");
+            }
+            sb.append("  - ").append(name).append(": ").append(changes).append("\n");
+        }
+        return sb.toString();
     }
 
     private String generatePRDescription(ProvisionRequest request, String requestId) {
