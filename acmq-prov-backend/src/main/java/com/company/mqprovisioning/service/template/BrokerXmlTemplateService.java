@@ -665,8 +665,9 @@ public class BrokerXmlTemplateService {
         }
 
         // Skapa ny queue-tagg
-        String newQueueTag = String.format("%s<queue name=\"<%%= @multicast_%s%%>\"/>",
-                queueIndent, subscriptionVarName);
+        String newQueueTag = String.format(
+                "%s<queue name=\"<%%= @multicast_%s%%>\" enabled=\"<%%= @multicast_%s_enabled%%>\"/>",
+                queueIndent, subscriptionVarName, subscriptionVarName);
 
         // Lägg till queue före </multicast>
         String trimmedMulticastContent = multicastContent.stripTrailing();
@@ -720,13 +721,17 @@ public class BrokerXmlTemplateService {
             if (request.getSubscriptions() != null && !request.getSubscriptions().isEmpty()) {
                 for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
                     String subscriptionVarName = convertToVariableName(subscription.getSubscriptionName());
-                    xml.append(String.format("<queue name=\"<%%= @multicast_%s%%>\"/>\n", subscriptionVarName));
+                    xml.append(String.format(
+                            "<queue name=\"<%%= @multicast_%s%%>\" enabled=\"<%%= @multicast_%s_enabled%%>\"/>\n",
+                            subscriptionVarName, subscriptionVarName));
                 }
             }
             // Fallback: stöd för gamla subscriptionName-fältet (bakåtkompatibilitet)
             else if (request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
                 String subscriptionVarName = convertToVariableName(request.getSubscriptionName());
-                xml.append(String.format("<queue name=\"<%%= @multicast_%s%%>\"/>\n", subscriptionVarName));
+                xml.append(String.format(
+                        "<queue name=\"<%%= @multicast_%s%%>\" enabled=\"<%%= @multicast_%s_enabled%%>\"/>\n",
+                        subscriptionVarName, subscriptionVarName));
             }
 
             xml.append("</multicast>\n");

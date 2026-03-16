@@ -280,20 +280,26 @@ public class AcmqYamlService {
 
         String content = existingContent;
         for (SubscriptionInfo sub : subscriptions) {
-            if (sub.isNew()) continue;
+            Boolean explicitEnabled = useProdEnabled ? sub.getProdEnabled() : sub.getTestEnabled();
 
-            Boolean enabled = useProdEnabled ? sub.getProdEnabled() : sub.getTestEnabled();
-            if (enabled == null) continue; // ingen ändring önskad för denna miljö
+            // För befintliga subscriptions: hoppa över om ingen explicit ändring skickats
+            if (!sub.isNew() && explicitEnabled == null) continue;
+
+            // För nya subscriptions: default true om inget angivet (variabeln måste finnas i YAML
+            // eftersom broker.xml.erb refererar till @multicast_xxx_enabled)
+            boolean enabled = explicitEnabled != null ? explicitEnabled : true;
 
             String varName = resolveVarName(sub, content);
             if (varName == null) {
-                log.warn("Kunde inte avgöra varName för subscription med subscriber '{}', hoppar över enabled-uppdatering",
-                        sub.getSubscriber());
+                log.warn("Kunde inte avgöra varName för subscription '{}', hoppar över enabled-uppdatering",
+                        sub.isNew() ? sub.getSubscriptionName() : sub.getSubscriber());
                 continue;
             }
 
-            content = setEnabledFlag(content, varName, enabled);
-            log.info("Updated subscription enabled flag: multicast_{}_enabled = {}", varName, enabled);
+            // Nya subscriptions skrivs alltid explicit (även true), befintliga bara om värdet ändras
+            content = setEnabledFlag(content, varName, enabled, sub.isNew());
+            log.info("{}subscription enabled flag: multicast_{}_enabled = {}",
+                    sub.isNew() ? "New " : "Updated ", varName, enabled);
         }
         return content;
     }
@@ -326,6 +332,14 @@ public class AcmqYamlService {
      * läggs raden till i slutet (true är default och behöver inte vara explicit).
      */
     private String setEnabledFlag(String content, String varName, boolean enabled) {
+        return setEnabledFlag(content, varName, enabled, false);
+    }
+
+    /**
+     * @param forceWrite true = skriv alltid raden explicit (t.ex. för nya subscriptions där
+     *                   broker.xml.erb kräver att variabeln är definierad)
+     */
+    private String setEnabledFlag(String content, String varName, boolean enabled, boolean forceWrite) {
         String key = "icc_artemis_broker::multicast_" + varName + "_enabled";
         String newLine = key + ": '" + enabled + "'";
 
@@ -336,11 +350,10 @@ public class AcmqYamlService {
         Matcher matcher = pattern.matcher(content);
         if (matcher.find()) {
             return matcher.replaceFirst(Matcher.quoteReplacement(newLine));
-        } else if (!enabled) {
-            // Raden finns inte och vi sätter false – lägg till explicit (true är default)
+        } else if (!enabled || forceWrite) {
             return content + (content.endsWith("\n") ? "" : "\n") + newLine + "\n";
         }
-        return content; // true är default, ingen rad behövs
+        return content;
     }
 
     private void updateOrCreateRole(List<RoleEntry> roles, String groupName, Set<String> usersToAdd) {
