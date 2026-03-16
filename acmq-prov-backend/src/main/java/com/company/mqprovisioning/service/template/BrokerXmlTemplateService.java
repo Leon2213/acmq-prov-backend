@@ -717,9 +717,12 @@ public class BrokerXmlTemplateService {
             // För MULTICAST (topic)
             xml.append("<multicast>\n");
 
-            // Lägg till subscription queues från nya subscriptions-listan
+            // Lägg till subscription queues – använd ALLA subscriptions (isNew-flaggan är opålitlig)
             if (request.getSubscriptions() != null && !request.getSubscriptions().isEmpty()) {
-                for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
+                for (SubscriptionInfo subscription : request.getSubscriptions()) {
+                    if (subscription.getSubscriptionName() == null || subscription.getSubscriptionName().isEmpty()) {
+                        continue;
+                    }
                     String subscriptionVarName = convertToVariableName(subscription.getSubscriptionName());
                     xml.append(String.format(
                             "<queue name=\"<%%= @multicast_%s%%>\" enabled=\"<%%= @multicast_%s_enabled%%>\"/>\n",

@@ -186,10 +186,14 @@ public class ProvisioningService {
             }
         }
 
-        // 4b. För topics med nya subscriptions: lägg till security-settings för varje ny subscription
-        if ("topic".equals(request.getResourceType()) && request.hasNewSubscriptions()) {
-            for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
-                log.info("Processing new subscription: {} with subscriber: {}",
+        // 4b. För topics: lägg till security-settings för varje subscription som saknas
+        // Använder ALLA subscriptions (isNew-flaggan är opålitlig från frontend)
+        if ("topic".equals(request.getResourceType()) && request.hasSubscriptions()) {
+            List<SubscriptionInfo> subsWithName = request.getSubscriptions().stream()
+                    .filter(s -> s.getSubscriptionName() != null && !s.getSubscriptionName().isEmpty())
+                    .toList();
+            for (SubscriptionInfo subscription : subsWithName) {
+                log.info("Processing subscription: {} with subscriber: {}",
                         subscription.getSubscriptionName(), subscription.getSubscriber());
 
                 if (!brokerXmlTemplateService.checkSubscriptionSecuritySettingExists(
@@ -214,9 +218,13 @@ public class ProvisioningService {
             updatedBrokerXml = insertAddress(updatedBrokerXml, newAddressEntry);
         } else {
             log.info("Address entry already exists for {}", request.getName());
-            // 5b. För topics med nya subscriptions: lägg till subscription queues i existerande address
-            if ("topic".equals(request.getResourceType()) && request.hasNewSubscriptions()) {
-                for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
+            // 5b. För topics: lägg till subscription queues som saknas i existerande address
+            // Använder ALLA subscriptions (isNew-flaggan är opålitlig från frontend)
+            if ("topic".equals(request.getResourceType()) && request.hasSubscriptions()) {
+                for (SubscriptionInfo subscription : request.getSubscriptions()) {
+                    if (subscription.getSubscriptionName() == null || subscription.getSubscriptionName().isEmpty()) {
+                        continue;
+                    }
                     if (!brokerXmlTemplateService.checkSubscriptionQueueExistsInAddress(
                             updatedBrokerXml, request.getName(), subscription.getSubscriptionName())) {
                         log.info("Adding subscription queue to existing address for {}::{}",

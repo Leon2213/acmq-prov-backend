@@ -350,10 +350,10 @@ public class AcmqYamlService {
         Matcher matcher = pattern.matcher(content);
         if (matcher.find()) {
             return matcher.replaceFirst(Matcher.quoteReplacement(newLine));
-        } else if (!enabled || forceWrite) {
+        } else {
+            // Skriv alltid explicit när nyckeln saknas – broker.xml.erb kräver att variabeln är definierad
             return content + (content.endsWith("\n") ? "" : "\n") + newLine + "\n";
         }
-        return content;
     }
 
     private void updateOrCreateRole(List<RoleEntry> roles, String groupName, Set<String> usersToAdd) {
