@@ -34,6 +34,9 @@ public class BrokerXmlTemplateService {
     public String generateSecuritySettingsToAdd(String existingContent, ProvisionRequest request) {
         StringBuilder xml = new StringBuilder();
 
+        // Lägg till ärendenummer som kommentar
+        xml.append("<!-- ").append(request.getTicketNumber()).append(" -->\n");
+
         String namespacePrefix = extractNamespacePrefix(request.getName());
         String variableName = convertToVariableName(request.getName());
 
@@ -312,6 +315,7 @@ public class BrokerXmlTemplateService {
         String subscriberRole = subscription.getSubscriber();
 
         StringBuilder xml = new StringBuilder();
+        xml.append("<!-- ").append(request.getTicketNumber()).append(" -->\n");
         xml.append(String.format("<security-setting match=\"<%%= @address_%s%%>::<%%= @multicast_%s%%>\">\n",
                 variableName, subscriptionVarName));
 
