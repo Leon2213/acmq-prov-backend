@@ -85,9 +85,12 @@ public class InitPpService {
     private List<SubscriptionInfo> findMissingSubscriptions(String existingContent, ProvisionRequest request) {
         List<SubscriptionInfo> missing = new ArrayList<>();
 
-        // Hantera nya subscriptions-listan
-        if (request.hasNewSubscriptions()) {
-            for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
+        // Använd ALLA subscriptions med subscriptionName satt (isNew-flaggan är opålitlig från frontend)
+        if (request.getSubscriptions() != null && !request.getSubscriptions().isEmpty()) {
+            for (SubscriptionInfo subscription : request.getSubscriptions()) {
+                if (subscription.getSubscriptionName() == null || subscription.getSubscriptionName().isEmpty()) {
+                    continue;
+                }
                 String subscriptionVarName = convertToVariableName(subscription.getSubscriptionName());
                 String subscriptionVarPattern = "\\$multicast_" + Pattern.quote(subscriptionVarName) + "\\s*=";
                 boolean exists = existingContent.matches("(?s).*" + subscriptionVarPattern + ".*");
@@ -103,10 +106,9 @@ public class InitPpService {
             String subscriptionVarPattern = "\\$multicast_" + Pattern.quote(subscriptionVarName) + "\\s*=";
             boolean exists = existingContent.matches("(?s).*" + subscriptionVarPattern + ".*");
             if (!exists) {
-                // Skapa en temporär SubscriptionInfo för bakåtkompatibilitet
                 missing.add(SubscriptionInfo.builder()
                         .subscriptionName(request.getSubscriptionName())
-                        .subscriber("legacy") // Placeholder
+                        .subscriber("legacy")
                         .isNew(true)
                         .build());
             }
@@ -234,9 +236,12 @@ public class InitPpService {
             // Address-variabel för topic
             lines.add(formatParameterLine("address", variableName, resourceName, alignmentColumn));
 
-            // Lägg till subscription-variabler från nya subscriptions-listan
-            if (request.hasNewSubscriptions()) {
-                for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
+            // Lägg till subscription-variabler – använd ALLA subscriptions (isNew-flaggan är opålitlig)
+            if (request.getSubscriptions() != null && !request.getSubscriptions().isEmpty()) {
+                for (SubscriptionInfo subscription : request.getSubscriptions()) {
+                    if (subscription.getSubscriptionName() == null || subscription.getSubscriptionName().isEmpty()) {
+                        continue;
+                    }
                     String subscriptionVarName = convertToVariableName(subscription.getSubscriptionName());
                     lines.add(formatParameterLine("multicast", subscriptionVarName, subscription.getSubscriptionName(), alignmentColumn));
                 }
@@ -321,9 +326,12 @@ public class InitPpService {
             // För topic: address-variabel
             validations.add(String.format("validate_string($address_%s)", variableName));
 
-            // Lägg till validering för alla nya subscriptions
-            if (request.hasNewSubscriptions()) {
-                for (SubscriptionInfo subscription : request.getNewSubscriptions()) {
+            // Lägg till validering för alla subscriptions – isNew-flaggan är opålitlig från frontend
+            if (request.getSubscriptions() != null && !request.getSubscriptions().isEmpty()) {
+                for (SubscriptionInfo subscription : request.getSubscriptions()) {
+                    if (subscription.getSubscriptionName() == null || subscription.getSubscriptionName().isEmpty()) {
+                        continue;
+                    }
                     String subscriptionVarName = convertToVariableName(subscription.getSubscriptionName());
                     validations.add(String.format("validate_string($multicast_%s)", subscriptionVarName));
                 }
