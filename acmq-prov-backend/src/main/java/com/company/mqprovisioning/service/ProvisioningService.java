@@ -250,16 +250,27 @@ public class ProvisioningService {
             return null;
         }
 
+        String subscriptionsSummary = "";
+        if (request.getSubscriptions() != null && !request.getSubscriptions().isEmpty()) {
+            String subNames = request.getSubscriptions().stream()
+                    .filter(s -> s.getSubscriptionName() != null && !s.getSubscriptionName().isEmpty())
+                    .map(s -> s.getSubscriptionName() + " (" + s.getSubscriber() + ")")
+                    .collect(java.util.stream.Collectors.joining(", "));
+            if (!subNames.isEmpty()) {
+                subscriptionsSummary = "\nSubscriptions: " + subNames;
+            }
+        }
         String commitMessage = String.format(
                 "[%s] Add config for %s '%s'\n\n" +
                         "Updated files:\n" +
                         "- init.pp: Added queue/topic variables\n" +
                         "- broker.xml.erb: Added security settings\n\n" +
-                        "Ticket: %s\nRequestor: %s\nTeam: %s",
+                        "Ticket: %s\nRequestor: %s\nTeam: %s%s",
                 request.getTicketNumber(),
                 request.getResourceType(), request.getName(),
                 request.getTicketNumber(),
-                request.getRequester(), request.getTeam()
+                request.getRequester(), request.getTeam(),
+                subscriptionsSummary
         );
         gitService.commitAndPush("puppet", branchName, commitMessage);
 

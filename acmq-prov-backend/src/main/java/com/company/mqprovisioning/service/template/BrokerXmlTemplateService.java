@@ -489,27 +489,6 @@ public class BrokerXmlTemplateService {
 
         xml.append("</security-setting>");
 
-        // 2. Subscription security-setting (om subscription finns)
-        if (request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
-            String subscriptionVarName = convertToVariableName(request.getSubscriptionName());
-
-            xml.append("\n");
-            xml.append(String.format("<security-setting match=\"<%%= @address_%s%%>::<%%= @multicast_%s%%>\">\n",
-                    variableName, subscriptionVarName));
-
-            // Consume: admin + consumers
-            xml.append(String.format("<permission type=\"consume\" roles=\"%s", adminRole));
-            appendRoles(xml, request.getConsumers());
-            xml.append("\"/>\n");
-
-            // Browse: admin + consumers
-            xml.append(String.format("<permission type=\"browse\" roles=\"%s", adminRole));
-            appendRoles(xml, request.getConsumers());
-            xml.append("\"/>\n");
-
-            xml.append("</security-setting>");
-        }
-
         return xml.toString();
     }
 
