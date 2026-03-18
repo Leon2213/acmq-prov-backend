@@ -121,29 +121,7 @@ public class ProvisioningService {
         }
 
         // 6. Commit och push
-        String subscriptionChanges = buildSubscriptionChangeSummary(request, existingTestContent, existingProdContent);
-        boolean isNew = "new".equalsIgnoreCase(request.getRequestType());
-        String action;
-        if (isNew) {
-            action = "Add users and roles for";
-        } else if (!subscriptionChanges.isEmpty()) {
-            action = "Update subscription for";
-        } else {
-            action = "Update users and roles for";
-        }
-        String commitMessage = String.format(
-                "[%s] %s %s '%s'\n\n" +
-                        "Ticket: %s\nRequestor: %s\nTeam: %s\n\n" +
-                        "Producers: %s\nConsumers: %s%s",
-                request.getTicketNumber(),
-                action,
-                request.getResourceType(), request.getName(),
-                request.getTicketNumber(),
-                request.getRequester(), request.getTeam(),
-                request.getProducers() != null ? String.join(", ", request.getProducers()) : "none",
-                request.getConsumers() != null ? String.join(", ", request.getConsumers()) : "none",
-                subscriptionChanges.isEmpty() ? "" : "\n\nSubscription changes:\n" + subscriptionChanges
-        );
+        String commitMessage = buildHieradataCommitMessage(request, existingTestContent, existingProdContent);
         gitService.commitAndPush("hieradata", branchName, commitMessage);
 
         // 7. Skapa Pull Request
@@ -261,31 +239,7 @@ public class ProvisioningService {
             return null;
         }
 
-        String subscriptionsSummary = "";
-        if (request.getSubscriptions() != null && !request.getSubscriptions().isEmpty()) {
-            String subNames = request.getSubscriptions().stream()
-                    .filter(s -> s.getSubscriptionName() != null && !s.getSubscriptionName().isEmpty())
-                    .map(s -> s.getSubscriptionName() + " (" + s.getSubscriber() + ")")
-                    .collect(java.util.stream.Collectors.joining(", "));
-            if (!subNames.isEmpty()) {
-                subscriptionsSummary = "\nSubscriptions: " + subNames;
-            }
-        }
-        String puppetAction = "new".equalsIgnoreCase(request.getRequestType()) ? "Add" : "Update";
-        String commitMessage = String.format(
-                "[%s] %s puppet config for %s '%s'\n\n" +
-                        "Updated files:\n" +
-                        "- init.pp: %s queue/topic variables\n" +
-                        "- broker.xml.erb: %s security settings\n\n" +
-                        "Ticket: %s\nRequestor: %s\nTeam: %s%s",
-                request.getTicketNumber(),
-                puppetAction,
-                request.getResourceType(), request.getName(),
-                puppetAction, puppetAction,
-                request.getTicketNumber(),
-                request.getRequester(), request.getTeam(),
-                subscriptionsSummary
-        );
+        String commitMessage = buildPuppetCommitMessage(request);
         gitService.commitAndPush("puppet", branchName, commitMessage);
 
         // 6. Skapa Pull Request
@@ -298,6 +252,77 @@ public class ProvisioningService {
         );*/
 
         return "pr url att fixa senare";
+    }
+
+    private String buildHieradataCommitMessage(ProvisionRequest request, String existingTestContent, String existingProdContent) {
+        boolean isNew = "new".equalsIgnoreCase(request.getRequestType());
+        String producers = request.getProducers() != null ? String.join(", ", request.getProducers()) : "none";
+        String consumers = request.getConsumers() != null ? String.join(", ", request.getConsumers()) : "none";
+
+        StringBuilder sb = new StringBuilder();
+        if (isNew) {
+            sb.append(String.format("[%s] Add new %s '%s'\n\n", request.getTicketNumber(), request.getResourceType(), request.getName()));
+            sb.append(String.format("Ticket: %s\nRequestor: %s\nTeam: %s\n\n", request.getTicketNumber(), request.getRequester(), request.getTeam()));
+            sb.append(String.format("Producers: %s\nConsumers: %s", producers, consumers));
+            String subsSummary = buildNewSubscriptionsSummary(request);
+            if (!subsSummary.isEmpty()) {
+                sb.append("\n\nSubscriptions:\n").append(subsSummary);
+            }
+        } else {
+            String subscriptionChanges = buildSubscriptionChangeSummary(request, existingTestContent, existingProdContent);
+            sb.append(String.format("[%s] Update %s '%s'\n\n", request.getTicketNumber(), request.getResourceType(), request.getName()));
+            sb.append(String.format("Ticket: %s\nRequestor: %s\nTeam: %s", request.getTicketNumber(), request.getRequester(), request.getTeam()));
+            if (!subscriptionChanges.isEmpty()) {
+                sb.append("\n\nSubscription changes:\n").append(subscriptionChanges);
+            } else {
+                sb.append(String.format("\n\nProducers: %s\nConsumers: %s", producers, consumers));
+            }
+        }
+        return sb.toString();
+    }
+
+    private String buildPuppetCommitMessage(ProvisionRequest request) {
+        boolean isNew = "new".equalsIgnoreCase(request.getRequestType());
+        String action = isNew ? "Add new" : "Update";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format("[%s] %s %s '%s'\n\n", request.getTicketNumber(), action, request.getResourceType(), request.getName()));
+        sb.append(String.format("Ticket: %s\nRequestor: %s\nTeam: %s", request.getTicketNumber(), request.getRequester(), request.getTeam()));
+
+        if (isNew) {
+            String producers = request.getProducers() != null ? String.join(", ", request.getProducers()) : "none";
+            String consumers = request.getConsumers() != null ? String.join(", ", request.getConsumers()) : "none";
+            sb.append(String.format("\n\nProducers: %s\nConsumers: %s", producers, consumers));
+        }
+
+        if (request.getSubscriptions() != null && !request.getSubscriptions().isEmpty()) {
+            String subLines = request.getSubscriptions().stream()
+                    .filter(s -> s.getSubscriptionName() != null && !s.getSubscriptionName().isEmpty())
+                    .map(s -> "  - " + s.getSubscriptionName() + " (" + s.getSubscriber() + ")")
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            if (!subLines.isEmpty()) {
+                sb.append("\n\nSubscriptions:\n").append(subLines);
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Listar subscriptions med deras initiala state för en ny topic.
+     * Exempel: "  - hejtest-subscription-icciscoolppl (icciscoolppl): test=enabled, prod=disabled"
+     */
+    private String buildNewSubscriptionsSummary(ProvisionRequest request) {
+        if (request.getSubscriptions() == null || request.getSubscriptions().isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (SubscriptionInfo sub : request.getSubscriptions()) {
+            if (sub.getSubscriptionName() == null || sub.getSubscriptionName().isEmpty()) continue;
+            String testState = sub.getTestEnabled() != null ? (sub.getTestEnabled() ? "enabled" : "disabled") : "enabled";
+            String prodState = sub.getProdEnabled() != null ? (sub.getProdEnabled() ? "enabled" : "disabled") : "enabled";
+            sb.append("  - ").append(sub.getSubscriptionName())
+              .append(" (").append(sub.getSubscriber()).append("): ")
+              .append("test=").append(testState).append(", prod=").append(prodState).append("\n");
+        }
+        return sb.toString();
     }
 
     /**
@@ -324,7 +349,8 @@ public class ProvisioningService {
                 Boolean existingVal = getExistingEnabledFlag(existingTestContent, varName);
                 boolean oldVal = existingVal != null ? existingVal : true;
                 boolean newVal = sub.getTestEnabled();
-                if (existingVal == null || oldVal != newVal) {
+                // Visa bara om värdet faktiskt ändras (ignorera null→true, det är default)
+                if (existingVal == null ? !newVal : oldVal != newVal) {
                     changes.append("test=")
                            .append(oldVal ? "enabled" : "disabled")
                            .append("→")
@@ -335,7 +361,8 @@ public class ProvisioningService {
                 Boolean existingVal = getExistingEnabledFlag(existingProdContent, varName);
                 boolean oldVal = existingVal != null ? existingVal : true;
                 boolean newVal = sub.getProdEnabled();
-                if (existingVal == null || oldVal != newVal) {
+                // Visa bara om värdet faktiskt ändras (ignorera null→true, det är default)
+                if (existingVal == null ? !newVal : oldVal != newVal) {
                     if (changes.length() > 0) changes.append(", ");
                     changes.append("prod=")
                            .append(oldVal ? "enabled" : "disabled")
