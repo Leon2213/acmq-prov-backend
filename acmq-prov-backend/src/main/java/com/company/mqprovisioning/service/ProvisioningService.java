@@ -122,12 +122,21 @@ public class ProvisioningService {
 
         // 6. Commit och push
         String subscriptionChanges = buildSubscriptionChangeSummary(request, existingTestContent, existingProdContent);
+        boolean isNew = "new".equalsIgnoreCase(request.getRequestType());
+        String action;
+        if (isNew) {
+            action = "Add users and roles for";
+        } else if (!subscriptionChanges.isEmpty()) {
+            action = "Update subscription for";
+        } else {
+            action = "Update users and roles for";
+        }
         String commitMessage = String.format(
                 "[%s] %s %s '%s'\n\n" +
                         "Ticket: %s\nRequestor: %s\nTeam: %s\n\n" +
                         "Producers: %s\nConsumers: %s%s",
                 request.getTicketNumber(),
-                subscriptionChanges.isEmpty() ? "Add users and roles for" : "Update subscription for",
+                action,
                 request.getResourceType(), request.getName(),
                 request.getTicketNumber(),
                 request.getRequester(), request.getTeam(),
@@ -262,14 +271,17 @@ public class ProvisioningService {
                 subscriptionsSummary = "\nSubscriptions: " + subNames;
             }
         }
+        String puppetAction = "new".equalsIgnoreCase(request.getRequestType()) ? "Add" : "Update";
         String commitMessage = String.format(
-                "[%s] Add config for %s '%s'\n\n" +
+                "[%s] %s puppet config for %s '%s'\n\n" +
                         "Updated files:\n" +
-                        "- init.pp: Added queue/topic variables\n" +
-                        "- broker.xml.erb: Added security settings\n\n" +
+                        "- init.pp: %s queue/topic variables\n" +
+                        "- broker.xml.erb: %s security settings\n\n" +
                         "Ticket: %s\nRequestor: %s\nTeam: %s%s",
                 request.getTicketNumber(),
+                puppetAction,
                 request.getResourceType(), request.getName(),
+                puppetAction, puppetAction,
                 request.getTicketNumber(),
                 request.getRequester(), request.getTeam(),
                 subscriptionsSummary
