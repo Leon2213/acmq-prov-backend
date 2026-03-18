@@ -93,7 +93,9 @@ public class InitPpService {
                 }
                 String subscriptionVarName = convertToVariableName(subscription.getSubscriptionName());
                 String subscriptionVarPattern = "\\$multicast_" + Pattern.quote(subscriptionVarName) + "\\s*=";
-                boolean exists = existingContent.matches("(?s).*" + subscriptionVarPattern + ".*");
+                String subscriptionEnabledVarPattern = "\\$multicast_" + Pattern.quote(subscriptionVarName) + "_enabled\\s*=";
+                boolean exists = existingContent.matches("(?s).*" + subscriptionVarPattern + ".*")
+                        && existingContent.matches("(?s).*" + subscriptionEnabledVarPattern + ".*");
                 if (!exists) {
                     missing.add(subscription);
                 }
@@ -244,12 +246,14 @@ public class InitPpService {
                     }
                     String subscriptionVarName = convertToVariableName(subscription.getSubscriptionName());
                     lines.add(formatParameterLine("multicast", subscriptionVarName, subscription.getSubscriptionName(), alignmentColumn));
+                    lines.add(formatParameterLine("multicast", subscriptionVarName + "_enabled", "true", alignmentColumn));
                 }
             }
             // Fallback: hantera gamla subscriptionName-fältet (bakåtkompatibilitet)
             else if (request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
                 String subscriptionVarName = convertToVariableName(request.getSubscriptionName());
                 lines.add(formatParameterLine("multicast", subscriptionVarName, request.getSubscriptionName(), alignmentColumn));
+                lines.add(formatParameterLine("multicast", subscriptionVarName + "_enabled", "true", alignmentColumn));
             }
         }
 
@@ -334,12 +338,14 @@ public class InitPpService {
                     }
                     String subscriptionVarName = convertToVariableName(subscription.getSubscriptionName());
                     validations.add(String.format("validate_string($multicast_%s)", subscriptionVarName));
+                    validations.add(String.format("validate_string($multicast_%s_enabled)", subscriptionVarName));
                 }
             }
             // Fallback: hantera gamla subscriptionName-fältet (bakåtkompatibilitet)
             else if (request.getSubscriptionName() != null && !request.getSubscriptionName().isEmpty()) {
                 String subscriptionVarName = convertToVariableName(request.getSubscriptionName());
                 validations.add(String.format("validate_string($multicast_%s)", subscriptionVarName));
+                validations.add(String.format("validate_string($multicast_%s_enabled)", subscriptionVarName));
             }
         }
 
@@ -377,10 +383,11 @@ public class InitPpService {
         // Detektera alignment-kolumnen för '=' från befintliga rader
         int alignmentColumn = detectAlignmentColumn(classParams);
 
-        // Skapa subscription-variabeldeklaration
+        // Skapa subscription-variabeldeklarationer
         String newLine = formatParameterLine("multicast", subscriptionVarName, subscriptionValue, alignmentColumn);
+        String newEnabledLine = formatParameterLine("multicast", subscriptionVarName + "_enabled", "true", alignmentColumn);
 
-        // Infoga nya deklarationen efter sista befintliga deklaration
+        // Infoga nya deklarationerna efter sista befintliga deklaration
         StringBuilder newClassParams = new StringBuilder();
         for (int i = 0; i < lines.length; i++) {
             newClassParams.append(lines[i]);
@@ -388,10 +395,11 @@ public class InitPpService {
                 newClassParams.append("\n");
             }
 
-            // Efter sista parameter-raden, lägg till ny deklaration
+            // Efter sista parameter-raden, lägg till nya deklarationer
             if (i == lastParamLineIndex) {
-                newClassParams.append("\n\n"); // Tom rad före nya deklarationen
+                newClassParams.append("\n\n"); // Tom rad före nya deklarationerna
                 newClassParams.append(newLine).append("\n");
+                newClassParams.append(newEnabledLine).append("\n");
             }
         }
 
@@ -424,11 +432,12 @@ public class InitPpService {
         int sectionStart = matcher.start();
         int sectionEnd = matcher.end();
 
-        // Lägg till ny validering i slutet av VALIDATES-sektionen
+        // Lägg till nya valideringar i slutet av VALIDATES-sektionen
         String trimmedBody = validatesBody.stripTrailing();
         StringBuilder newValidatesBody = new StringBuilder(trimmedBody);
         newValidatesBody.append("\n");
         newValidatesBody.append("  ").append(String.format("validate_string($multicast_%s)", subscriptionVarName)).append("\n");
+        newValidatesBody.append("  ").append(String.format("validate_string($multicast_%s_enabled)", subscriptionVarName)).append("\n");
         newValidatesBody.append("\n");
 
         // Ersätt VALIDATES-sektionen
