@@ -62,6 +62,11 @@ public class AcmqYamlService {
         // Skapa/uppdatera grupper: könamn-admin, könamn-read, könamn-write
         updateRoleGroups(roles, queuePrefix, request, subscribers);
 
+        // Skapa individuell grupp för varje ny användare: group: 'user', users: 'user'
+        for (String user : newUsers) {
+            updateOrCreateRole(roles, user, Collections.singleton(user));
+        }
+
         // Ersätt users och roles sektionerna i original-innehållet
         String updatedContent = replaceUsersSection(existingContent, users);
         updatedContent = replaceRolesSection(updatedContent, roles);
