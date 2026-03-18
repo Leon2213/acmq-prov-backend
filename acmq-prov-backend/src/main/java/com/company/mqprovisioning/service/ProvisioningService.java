@@ -15,6 +15,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -119,7 +121,7 @@ public class ProvisioningService {
         }
 
         // 6. Commit och push
-        String subscriptionChanges = buildSubscriptionChangeSummary(request);
+        String subscriptionChanges = buildSubscriptionChangeSummary(request, existingTestContent, existingProdContent);
         String commitMessage = String.format(
                 "[%s] %s %s '%s'\n\n" +
                         "Ticket: %s\nRequestor: %s\nTeam: %s\n\n" +
@@ -287,11 +289,12 @@ public class ProvisioningService {
     }
 
     /**
-     * Bygger en rad per subscription som har fått enabled/disabled-ändring.
-     * Exempel: "  - incidentprocess: test=false, prod=true"
-     * Returnerar tom sträng om inga subscription-ändringar finns.
+     * Bygger en rad per subscription som faktiskt ändrats i YAML-filerna.
+     * Jämför nuvarande YAML-värde mot begärt värde och visar bara verkliga ändringar.
+     * Exempel: "  - incidentprocess: test=enabled→disabled"
+     * Returnerar tom sträng om inga faktiska ändringar finns.
      */
-    private String buildSubscriptionChangeSummary(ProvisionRequest request) {
+    private String buildSubscriptionChangeSummary(ProvisionRequest request, String existingTestContent, String existingProdContent) {
         if (request.getSubscriptions() == null || request.getSubscriptions().isEmpty()) {
             return "";
         }
@@ -302,17 +305,54 @@ public class ProvisioningService {
 
             String name = sub.getSubscriptionName() != null ? sub.getSubscriptionName()
                     : sub.getSubscriber() != null ? sub.getSubscriber() : "unknown";
+            String varName = name.replace("-", "_");
+
             StringBuilder changes = new StringBuilder();
             if (sub.getTestEnabled() != null) {
-                changes.append("test=").append(sub.getTestEnabled() ? "enabled" : "disabled");
+                Boolean existingVal = getExistingEnabledFlag(existingTestContent, varName);
+                boolean oldVal = existingVal != null ? existingVal : true;
+                boolean newVal = sub.getTestEnabled();
+                if (existingVal == null || oldVal != newVal) {
+                    changes.append("test=")
+                           .append(oldVal ? "enabled" : "disabled")
+                           .append("→")
+                           .append(newVal ? "enabled" : "disabled");
+                }
             }
             if (sub.getProdEnabled() != null) {
-                if (changes.length() > 0) changes.append(", ");
-                changes.append("prod=").append(sub.getProdEnabled() ? "enabled" : "disabled");
+                Boolean existingVal = getExistingEnabledFlag(existingProdContent, varName);
+                boolean oldVal = existingVal != null ? existingVal : true;
+                boolean newVal = sub.getProdEnabled();
+                if (existingVal == null || oldVal != newVal) {
+                    if (changes.length() > 0) changes.append(", ");
+                    changes.append("prod=")
+                           .append(oldVal ? "enabled" : "disabled")
+                           .append("→")
+                           .append(newVal ? "enabled" : "disabled");
+                }
             }
-            sb.append("  - ").append(name).append(": ").append(changes).append("\n");
+            if (changes.length() > 0) {
+                sb.append("  - ").append(name).append(": ").append(changes).append("\n");
+            }
         }
         return sb.toString();
+    }
+
+    /**
+     * Läser nuvarande enabled-värde för en subscription ur YAML-innehållet.
+     * Returnerar null om nyckeln inte finns (standard är då true).
+     */
+    private Boolean getExistingEnabledFlag(String yamlContent, String varName) {
+        if (yamlContent == null || varName == null) return null;
+        Pattern pattern = Pattern.compile(
+                "^icc_artemis_broker::multicast_" + Pattern.quote(varName) + "_enabled:\\s*'(true|false)'",
+                Pattern.MULTILINE
+        );
+        Matcher matcher = pattern.matcher(yamlContent);
+        if (matcher.find()) {
+            return Boolean.parseBoolean(matcher.group(1));
+        }
+        return null;
     }
 
     private String generatePRDescription(ProvisionRequest request, String requestId) {
