@@ -123,6 +123,7 @@ public class ProvisioningService {
         // 6. Commit och push
         String commitMessage = buildHieradataCommitMessage(request, existingTestContent, existingProdContent);
         gitService.commitAndPush("hieradata", branchName, commitMessage);
+        gitService.deleteLocalBranch("hieradata", branchName);
 
         // 7. Skapa Pull Request
 //        String prUrl = gitService.createPullRequest(
@@ -241,6 +242,7 @@ public class ProvisioningService {
 
         String commitMessage = buildPuppetCommitMessage(request);
         gitService.commitAndPush("puppet", branchName, commitMessage);
+        gitService.deleteLocalBranch("puppet", branchName);
 
         // 6. Skapa Pull Request
         /*String prUrl = gitService.createPullRequest(

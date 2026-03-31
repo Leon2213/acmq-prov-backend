@@ -351,6 +351,22 @@ public class GitService {
         }
     }
 
+    public void deleteLocalBranch(String repoName, String branchName) {
+        try {
+            Git git = repoCache.get(repoName);
+            if (git == null) {
+                throw new IllegalStateException("Repository " + repoName + " inte förberedd");
+            }
+            // Checkout master/prod innan vi tar bort branchen
+            String mainBranch = repoName.equals("puppet") ? "prod" : "master";
+            git.checkout().setName(mainBranch).call();
+            git.branchDelete().setBranchNames(branchName).setForce(true).call();
+            log.info("Deleted local branch {} in repository {}", branchName, repoName);
+        } catch (GitAPIException e) {
+            log.warn("Could not delete local branch {} in repository {}: {}", branchName, repoName, e.getMessage());
+        }
+    }
+
     public String createPullRequest(String repoName, String sourceBranch,
                                     String targetBranch, String title, String description) {
         // Använd Bitbucket API för att skapa pull request
