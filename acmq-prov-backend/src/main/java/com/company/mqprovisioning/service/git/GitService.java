@@ -1,5 +1,6 @@
 package com.company.mqprovisioning.service.git;
 
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.jgit.api.CreateBranchCommand;
 import org.eclipse.jgit.api.Git;
@@ -7,6 +8,7 @@ import org.eclipse.jgit.api.ResetCommand;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.RepositoryState;
 import org.eclipse.jgit.lib.StoredConfig;
+import org.eclipse.jgit.storage.file.WindowCacheConfig;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,6 +46,18 @@ public class GitService {
 
     private final Map<String, Git> repoCache = new HashMap<>();
 
+    @PostConstruct
+    public void configureJGitMemory() {
+        WindowCacheConfig cfg = new WindowCacheConfig();
+        // Limit JGit's pack file window cache to 32 MB (default is 128 MB)
+        cfg.setPackedGitLimit(32 * 1024 * 1024);
+        // Use smaller windows (8 KB instead of 8 MB default)
+        cfg.setPackedGitWindowSize(8 * 1024);
+        // Limit delta base cache to 16 MB (default is 10 MB, but pack window reduction matters more)
+        cfg.setDeltaBaseCacheLimit(16 * 1024 * 1024);
+        cfg.install();
+        log.info("JGit WindowCache configured: packedGitLimit=32MB, windowSize=8KB");
+    }
 
     public void prepareRepoHieradata() {
         String repoName = "hieradata";
@@ -81,11 +95,12 @@ public class GitService {
 
                 repoCache.put(repoName, git);
             } else {
-                log.info("Cloning repository {} from {}", repoName, hieradataRepoUrl);
+                log.info("Cloning repository {} from {} (shallow, depth=1)", repoName, hieradataRepoUrl);
                 Files.createDirectories(repoPath);
                 Git git = Git.cloneRepository()
                         .setURI(hieradataRepoUrl)
                         .setDirectory(repoPath.toFile())
+                        .setDepth(1)
                         .setCredentialsProvider(getCredentialsProvider())
                         .call();
                 repoCache.put(repoName, git);
@@ -134,11 +149,12 @@ public class GitService {
 
                     repoCache.put(repoName, git);
             } else {
-                log.info("Cloning repository {} from {}", repoName, puppetRepoUrl);
+                log.info("Cloning repository {} from {} (shallow, depth=1)", repoName, puppetRepoUrl);
                 Files.createDirectories(repoPath);
                 Git git = Git.cloneRepository()
                         .setURI(puppetRepoUrl)
                         .setDirectory(repoPath.toFile())
+                        .setDepth(1)
                         .setCredentialsProvider(getCredentialsProvider())
                         .call();
                 repoCache.put(repoName, git);
