@@ -22,6 +22,9 @@ public class BitbucketPRService {
     @Value("${git.bitbucket.api.url:https://api.bitbucket.org/2.0}")
     private String bitbucketApiUrl;
 
+    @Value("${git.username}")
+    private String gitUsername;
+
     @Value("${git.bitbucket.token}")
     private String bitbucketToken;
 
@@ -69,7 +72,7 @@ public class BitbucketPRService {
             PullRequestResponse response = webClient.post()
                     .uri(bitbucketApiUrl + "/repositories/{workspace}/{repo_slug}/pullrequests",
                          workspace, repoSlug)
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + bitbucketToken)
+                    .headers(h -> h.setBasicAuth(gitUsername, bitbucketToken))
                     .bodyValue(requestBody)
                     .retrieve()
                     .bodyToMono(PullRequestResponse.class)
@@ -100,7 +103,7 @@ public class BitbucketPRService {
             PullRequestResponse response = webClient.get()
                     .uri(bitbucketApiUrl + "/repositories/{workspace}/{repo_slug}/pullrequests/{pull_request_id}",
                          workspace, repoSlug, prId)
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + bitbucketToken)
+                    .headers(h -> h.setBasicAuth(gitUsername, bitbucketToken))
                     .retrieve()
                     .bodyToMono(PullRequestResponse.class)
                     .block();
@@ -129,7 +132,7 @@ public class BitbucketPRService {
             webClient.post()
                     .uri(bitbucketApiUrl + "/repositories/{workspace}/{repo_slug}/pullrequests/{pull_request_id}/comments",
                          workspace, repoSlug, prId)
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + bitbucketToken)
+                    .headers(h -> h.setBasicAuth(gitUsername, bitbucketToken))
                     .bodyValue(Map.of("content", Map.of("raw", comment)))
                     .retrieve()
                     .bodyToMono(Void.class)
@@ -157,7 +160,7 @@ public class BitbucketPRService {
             webClient.post()
                     .uri(bitbucketApiUrl + "/repositories/{workspace}/{repo_slug}/pullrequests/{pull_request_id}/merge",
                          workspace, repoSlug, prId)
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + bitbucketToken)
+                    .headers(h -> h.setBasicAuth(gitUsername, bitbucketToken))
                     .bodyValue(mergeRequest)
                     .retrieve()
                     .bodyToMono(Map.class)
@@ -183,7 +186,7 @@ public class BitbucketPRService {
                 webClient.put()
                         .uri(bitbucketApiUrl + "/repositories/{workspace}/{repo_slug}/pullrequests/{pull_request_id}/default-reviewers/{target_username}",
                              workspace, repoSlug, prId, reviewer)
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + bitbucketToken)
+                        .headers(h -> h.setBasicAuth(gitUsername, bitbucketToken))
                         .retrieve()
                         .bodyToMono(Void.class)
                         .block();
