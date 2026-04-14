@@ -65,29 +65,28 @@ public class BitbucketPRService {
                 "close_source_branch", true
         );
 
-//        try {
-//            PullRequestResponse response = webClient.post()
-//                    .uri(bitbucketApiUrl + "/repositories/{workspace}/{repo_slug}/pullrequests",
-//                         workspace, repoSlug)
-//                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + bitbucketToken)
-//                    .bodyValue(requestBody)
-//                    .retrieve()
-//                    .bodyToMono(PullRequestResponse.class)
-//                    .block();
-//
-//            if (response != null && response.getLinks() != null &&
-//                response.getLinks().getHtml() != null) {
-//                String prUrl = response.getLinks().getHtml().getHref();
-//                log.info("Successfully created pull request #{}: {}", response.getId(), prUrl);
-//                return prUrl;
-//            } else {
-//                throw new RuntimeException("Failed to create pull request - no response or URL");
-//            }
-//        } catch (Exception e) {
-//            log.error("Error creating pull request in Bitbucket", e);
-//            throw new RuntimeException("Failed to create pull request: " + e.getMessage(), e);
-//        }
-        return "prURL change later";
+        try {
+            PullRequestResponse response = webClient.post()
+                    .uri(bitbucketApiUrl + "/repositories/{workspace}/{repo_slug}/pullrequests",
+                         workspace, repoSlug)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + bitbucketToken)
+                    .bodyValue(requestBody)
+                    .retrieve()
+                    .bodyToMono(PullRequestResponse.class)
+                    .block();
+
+            if (response != null && response.getLinks() != null &&
+                response.getLinks().getHtml() != null) {
+                String prUrl = response.getLinks().getHtml().getHref();
+                log.info("Successfully created pull request #{}: {}", response.getId(), prUrl);
+                return prUrl;
+            } else {
+                throw new RuntimeException("Failed to create pull request - no response or URL");
+            }
+        } catch (Exception e) {
+            log.error("Error creating pull request in Bitbucket", e);
+            throw new RuntimeException("Failed to create pull request: " + e.getMessage(), e);
+        }
     }
 
 

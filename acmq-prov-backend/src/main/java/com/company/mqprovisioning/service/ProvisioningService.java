@@ -110,15 +110,15 @@ public class ProvisioningService {
         gitService.commitAndPush("hieradata", branchName, commitMessage);
 
         // 6. Skapa Pull Request
-//        String prUrl = gitService.createPullRequest(
-//            "hieradata",
-//            branchName,
-//            "master",
-//            String.format("MQ Provisioning: Users and roles for %s", request.getName()),
-//            generatePRDescription(request, requestId)
-//        );
+        String prUrl = gitService.createPullRequest(
+            "hieradata",
+            branchName,
+            "master",
+            String.format("MQ Provisioning: Users and roles for %s", request.getName()),
+            generatePRDescription(request, requestId)
+        );
 
-        return "PR for hieradata-url to fix later";
+        return prUrl;
     }
 
     private String updateBrokerXmlRepo(ProvisionRequest request, String requestId) {
@@ -222,15 +222,15 @@ public class ProvisioningService {
         gitService.commitAndPush("puppet", branchName, commitMessage);
 
         // 6. Skapa Pull Request
-        /*String prUrl = gitService.createPullRequest(
+        String prUrl = gitService.createPullRequest(
             "puppet",
             branchName,
-            "main",
+            "prod",
             String.format("MQ Provisioning: Puppet config for %s", request.getName()),
             generatePRDescription(request, requestId)
-        );*/
+        );
 
-        return "pr url att fixa senare";
+        return prUrl;
     }
 
     private String generatePRDescription(ProvisionRequest request, String requestId) {
